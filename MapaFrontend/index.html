@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>DEPURACIÓN - Valencia Luz</title>
+    
+    <!-- Rutas locales de Leaflet -->
+    <link rel="stylesheet" href="/leaflet/leaflet.css" />
+    <script src="/leaflet/leaflet.js"></script>
+
+    <style>
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #121212; }
+        #encabezado { background-color: #1a1a1a; padding: 10px; text-align: center; color: white; height: 50px; }
+        /* Forzamos bordes visibles para saber si el contenedor realmente existe en pantalla */
+        #mapa {
+            width: 100%;
+            height: calc(100vh - 50px);
+            background-color: #222222;
+            border: 3px solid #ff9800; /* Borde naranja de control */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="encabezado">
+        <h2>Panel de Control y Depuración Técnica</h2>
+    </div>
+
+    <div id="mapa"></div>
+
+    <script>
+        console.log("--> [PASO 1] El script del HTML ha iniciado correctamente.");
+
+        // Verificación de seguridad: ¿La librería Leaflet se cargó en memoria?
+        if (typeof L === 'undefined') {
+            console.error("❌ [ERROR CRÍTICO] La variable 'L' no existe. Las librerías locales /leaflet/leaflet.js no se están cargando bien desde Node.");
+            alert("Error: No se pudo cargar la librería del mapa. Revisa la consola.");
+        } else {
+            console.log("✅ [PASO 2] Librería Leaflet detectada exitosamente en el navegador.");
+            
+            try {
+                console.log("--> [PASO 3] Intentando inicializar el contenedor del mapa...");
+                const map = L.map('mapa').setView([10.162, -68.007], 13);
+                console.log("✅ [PASO 4] Objeto mapa creado. Intentando montar la capa de OpenStreetMap...");
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
+                
+                console.log("✅ [PASO 5] Capa de OpenStreetMap añadida al mapa de forma segura.");
+
+                // Simulación local rápida dentro del script para verificar si dibuja círculos independientes de la API
+                console.log("--> [PASO 6] Dibujando círculo de prueba en el centro de Valencia...");
+                L.circle([10.162, -68.007], {
+                    color: '#f44336',
+                    fillColor: '#f44336',
+                    fillOpacity: 0.7,
+                    radius: 600
+                }).addTo(map).bindPopup("<b>Punto de control de depuración activo</b>");
+                
+                console.log("🚀 [ÉXITO TOTAL] El mapa se configuró completamente en el navegador.");
+
+            } catch (err) {
+                console.error("❌ [FALLO EN EJECUCIÓN] Ocurrió un error al renderizar el mapa:", err.message);
+            }
+        }
+    </script>
+</body>
+</html>
