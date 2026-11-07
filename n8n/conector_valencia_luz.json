@@ -174,7 +174,7 @@
             {
               "id": "dce7d744-954a-5c27-a079-597315b252df",
               "name": "mensaje",
-              "value": "📡 *Radar* · cortes de luz reportados por los vecinos, en vivo.\n\n• *Reportar un corte:* envía tu ubicación 📍 y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://luz.brecha-cero.com/mapa",
+              "value": "📡 *Radar* · cortes de luz reportados por los vecinos, en vivo.\n\n• *Reportar un corte:* envía tu ubicación 📍 y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://radar.brecha-cero.com/mapa",
               "type": "string"
             }
           ]
@@ -322,7 +322,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Respuesta de POST /api/reportar/nombre\nconst r = $input.first().json;\nconst b = r.body || {};\nlet mensaje;\nif (r.statusCode === 200) {\n  const zona = String(b.zona || '').toUpperCase();\n  mensaje = b.tiene_luz === 1\n    ? `✅ Registramos que *volvió la luz* en *${zona}*. ¡Gracias por avisar!`\n    : `✅ Tu reporte de *corte* en *${zona}* ya está en el mapa.`;\n  mensaje += '\\nMapa en vivo: https://luz.brecha-cero.com/mapa';\n} else if (r.statusCode === 404) {\n  mensaje = '📍 Tu ubicación ya venció. Envíala de nuevo y luego responde con el nombre de tu sector.';\n} else if (r.statusCode === 422) {\n  mensaje = 'No entendí el nombre del sector. Escríbelo solo, por ejemplo: *Prebo* o *Si, Prebo*.';\n} else {\n  mensaje = '⚠️ No pudimos guardar tu reporte en este momento. Intenta de nuevo en unos minutos.';\n}\nreturn [{ json: { mensaje } }];\n"
+        "jsCode": "// Respuesta de POST /api/reportar/nombre\nconst r = $input.first().json;\nconst b = r.body || {};\nlet mensaje;\nif (r.statusCode === 200) {\n  const zona = String(b.zona || '').toUpperCase();\n  mensaje = b.tiene_luz === 1\n    ? `✅ Registramos que *volvió la luz* en *${zona}*. ¡Gracias por avisar!`\n    : `✅ Tu reporte de *corte* en *${zona}* ya está en el mapa.`;\n  mensaje += '\\nMapa en vivo: https://radar.brecha-cero.com/mapa';\n} else if (r.statusCode === 404) {\n  mensaje = '📍 Tu ubicación ya venció. Envíala de nuevo y luego responde con el nombre de tu sector.';\n} else if (r.statusCode === 422) {\n  mensaje = 'No entendí el nombre del sector. Escríbelo solo, por ejemplo: *Prebo* o *Si, Prebo*.';\n} else {\n  mensaje = '⚠️ No pudimos guardar tu reporte en este momento. Intenta de nuevo en unos minutos.';\n}\nreturn [{ json: { mensaje } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

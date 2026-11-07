@@ -336,7 +336,7 @@ def mensaje_zona(r):
     if r["reportes_7_dias"] == 0:
         return (f"📡 *Radar*: todavía no hay reportes de *{nombre}* en los últimos 7 días.\n"
                 "Si estás ahí, envía tu ubicación 📍 para que tu sector aparezca en el mapa: "
-                "https://luz.brecha-cero.com/mapa")
+                "https://radar.brecha-cero.com/mapa")
     lineas = [f"📡 *Radar · {nombre}*"]
     if r["estado"] == "sin_luz":
         lineas.append(f"• Ahora: *sin luz* según los reportes (desde las {r['inicio_corte_hoy']})."
@@ -356,7 +356,7 @@ def mensaje_zona(r):
         lineas.append("• No hay reportes recientes de este sector.")
     lineas.append(f"• Esta semana: cortes en {r['dias_con_corte_7_dias']} de 7 días "
                   f"({r['probabilidad_corte_pct']} %).")
-    lineas.append("Mapa en vivo: https://luz.brecha-cero.com/mapa")
+    lineas.append("Mapa en vivo: https://radar.brecha-cero.com/mapa")
     return "\n".join(lineas)
 
 
