@@ -21,6 +21,7 @@ services:
       - "127.0.0.1:5050:5000"
     environment:
       - PORT=5000
+      - VL_WHATSAPP=${VL_WHATSAPP:-}   # numero del bot para el boton del mapa (en .env); vacio = boton oculto
     restart: always
     depends_on:
       - motor-python
