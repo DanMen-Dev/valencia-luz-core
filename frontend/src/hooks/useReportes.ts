@@ -9,6 +9,7 @@ export interface EstadoReportes {
   cargando: boolean;
   error: boolean;
   actualizado: Date | null;
+  guardadoEn: Date | null;
   recargar: () => Promise<void>;
 }
 
@@ -18,6 +19,7 @@ export function useReportes(): EstadoReportes {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(false);
   const [actualizado, setActualizado] = useState<Date | null>(null);
+  const [guardadoEn, setGuardadoEn] = useState<Date | null>(null);
   const enCurso = useRef<AbortController | null>(null);
 
   const recargar = useCallback(async () => {
@@ -25,10 +27,11 @@ export function useReportes(): EstadoReportes {
     const control = new AbortController();
     enCurso.current = control;
     try {
-      const datos = await obtenerReportes(control.signal);
+      const { reportes: datos, guardadoEn: guardado } = await obtenerReportes(control.signal);
       setReportes(datos);
       setError(false);
-      setActualizado(new Date());
+      setGuardadoEn(guardado);
+      setActualizado(guardado ?? new Date());
     } catch (e) {
       if ((e as Error).name !== 'AbortError') setError(true);
     } finally {
@@ -48,5 +51,5 @@ export function useReportes(): EstadoReportes {
     };
   }, [recargar]);
 
-  return { reportes, cargando, error, actualizado, recargar };
+  return { reportes, cargando, error, actualizado, guardadoEn, recargar };
 }

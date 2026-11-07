@@ -47,4 +47,18 @@ describe('Panel', () => {
     rerender(<Panel {...base} enviando onReportar={onReportar} />);
     expect(screen.getByRole('button', { name: /No hay luz/ })).toBeDisabled();
   });
+
+  it('avisa cuando muestra reportes guardados sin conexion', () => {
+    render(<Panel {...base} guardadoEn={new Date(2026, 10, 7, 9, 40)} />);
+    expect(screen.getByText(/Sin conexión: mostrando los reportes guardados/)).toBeInTheDocument();
+  });
+
+  it('ofrece instalar la app solo cuando el navegador lo permite', async () => {
+    const onInstalar = vi.fn();
+    const { rerender } = render(<Panel {...base} onInstalar={onInstalar} />);
+    expect(screen.queryByRole('button', { name: /Instalar Radar/ })).not.toBeInTheDocument();
+    rerender(<Panel {...base} puedeInstalar onInstalar={onInstalar} />);
+    await userEvent.click(screen.getByRole('button', { name: /Instalar Radar/ }));
+    expect(onInstalar).toHaveBeenCalledOnce();
+  });
 });

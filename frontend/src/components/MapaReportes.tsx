@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -6,6 +6,8 @@ import iconoUrl from 'leaflet/dist/images/marker-icon.png';
 import iconoRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import sombraUrl from 'leaflet/dist/images/marker-shadow.png';
 import { PopupGrupo, type Confirmar } from './PopupGrupo';
+import { FondoVectorial } from './FondoVectorial';
+import { TILES_OSM, tieneWebGL } from '../lib/fondoMapa';
 import { agrupar, radioGrupo, type Grupo } from '../lib/agrupar';
 import type { Reporte } from '../types';
 
@@ -32,13 +34,17 @@ function Enfocar({ foco }: { foco: Foco | null }) {
 
 export function MapaReportes({ reportes, foco, onConfirmar }: { reportes: Reporte[]; foco: Foco | null; onConfirmar?: Confirmar }) {
   const grupos = useMemo(() => agrupar(reportes), [reportes]);
+  const [vectorial, setVectorial] = useState(tieneWebGL);
+  const alFallar = useCallback(() => setVectorial(false), []);
   return (
     <MapContainer
       center={foco ? [foco.lat, foco.lon] : CENTRO_VALENCIA}
       zoom={foco?.zoom ?? 13}
       className="mapa"
     >
-      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} attribution="© OpenStreetMap" />
+      {vectorial
+        ? <FondoVectorial onFalla={alFallar} />
+        : <TileLayer url={TILES_OSM} maxZoom={19} attribution="© OpenStreetMap" />}
       <Enfocar foco={foco} />
       {grupos.map(g => (
         <Circle

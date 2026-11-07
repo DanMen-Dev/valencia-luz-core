@@ -5,6 +5,9 @@ interface Props {
   cargando: boolean;
   error: boolean;
   actualizado: Date | null;
+  guardadoEn?: Date | null;
+  puedeInstalar?: boolean;
+  onInstalar?: () => void;
   whatsapp: string;
   horas: number;
   aviso: Aviso;
@@ -23,8 +26,10 @@ function resumen({ reportes, cargando, error, actualizado, horas }: Pick<Props, 
     : `${sin} sin luz · ${con} con luz (últimas ${horas} h) · actualizado ${hora}`;
 }
 
+const horaCorta = (d: Date) => d.toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' });
+
 export function Panel(props: Props) {
-  const { whatsapp, aviso, enviando, onReportar } = props;
+  const { whatsapp, aviso, enviando, onReportar, guardadoEn, puedeInstalar, onInstalar } = props;
   return (
     <aside className="panel">
       <header>
@@ -45,7 +50,13 @@ export function Panel(props: Props) {
             💬 Reportar por WhatsApp
           </a>
         )}
+        {puedeInstalar && onInstalar && (
+          <button type="button" className="btn btn-instalar" onClick={onInstalar}>📲 Instalar Radar en este teléfono</button>
+        )}
         <p className={`aviso ${aviso?.tipo ?? ''}`} role="status" aria-live="polite">{aviso?.texto ?? ''}</p>
+        {guardadoEn && (
+          <p className="sin-conexion" role="status">📴 Sin conexión: mostrando los reportes guardados a las {horaCorta(guardadoEn)}.</p>
+        )}
       </section>
 
       <section className="leyenda" aria-label="Leyenda">

@@ -8,3 +8,10 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// App instalable y sin conexion: el service worker vive en /sw.js para controlar todo el sitio
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+  });
+}

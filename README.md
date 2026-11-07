@@ -15,7 +15,8 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Mapa web y reporte desde el navegador | En producción |
 | Backend (API, estimaciones, respaldo diario) | En producción, 41 pruebas automáticas |
 | Bot de WhatsApp (n8n + Chatwoot) | Probado de punta a punta con eventos simulados; falta conectar un número de WhatsApp |
-| Frontend en React + TypeScript (Vite) | En producción, 40 pruebas con Vitest y Testing Library |
+| Frontend en React + TypeScript (Vite) | En producción, 45 pruebas con Vitest y Testing Library |
+| App instalable (PWA) y mapa sin conexión | En producción |
 
 No es información oficial de Corpoelec: todo sale de lo que reportan los vecinos.
 
@@ -59,6 +60,12 @@ Para cada sector, con los reportes de los últimos 7 días:
 
 Es estadística simple y transparente, no un modelo predictivo. Un modelo de verdad necesita más historia de la que hay hoy.
 
+### App instalable y mapa sin conexión
+
+Durante un apagón muchas veces cae también la señal de datos, así que Radar es una **PWA**: en Android se instala desde el botón "Instalar Radar" (en iPhone, Compartir → Agregar a inicio) y abre sin conexión. Un service worker guarda la app, la última lista de reportes (el panel avisa "Sin conexión: mostrando los reportes guardados a las …") y las calles ya vistas.
+
+El fondo del mapa es **OpenFreeMap** (mapas vectoriales con datos de OpenStreetMap, gratis, sin clave ni límite de vistas), dibujado con MapLibre debajo de las capas de Leaflet. Si el teléfono no tiene WebGL o OpenFreeMap falla, el mapa cambia solo a las imágenes de OpenStreetMap. Se descartó MapTiler porque su plan gratis se pausa al pasar 5.000 sesiones al mes, justo lo que pasaría en un apagón grande.
+
 ## Decisiones y lecciones
 
 - **La base de datos vivía dentro del contenedor.** Un `docker compose up --build` la habría borrado, y el respaldo nocturno apuntaba a un archivo que no existía. Ahora vive en `./datos` (volumen) y el respaldo usa la API de backup de SQLite.
@@ -71,7 +78,7 @@ Es estadística simple y transparente, no un modelo predictivo. Un modelo de ver
 
 ## Stack
 
-Python 3.13 · FastAPI · SQLite · React 19 · TypeScript · Vite · react-leaflet · Node 24 · Express · n8n · Chatwoot · OpenAI (gpt-4o-mini) · Docker Compose · nginx · Let's Encrypt · GitHub Actions · VPS en Hetzner.
+Python 3.13 · FastAPI · SQLite · React 19 · TypeScript · Vite · react-leaflet · MapLibre · OpenFreeMap · PWA (service worker) · Node 24 · Express · n8n · Chatwoot · OpenAI (gpt-4o-mini) · Docker Compose · nginx · Let's Encrypt · GitHub Actions · VPS en Hetzner.
 
 ## Estructura
 
@@ -134,7 +141,8 @@ Los nombres internos (`valencia_luz`, `luz_backend_python`, el repo) vienen del 
 
 ## Próximos pasos
 
-- Conectar un número de WhatsApp al bot.
+- Bot gratuito en Telegram (sin Chatwoot) y botón "Compartir en WhatsApp" para difundir el mapa.
+- Reportes sin conexión que se envían solos al volver la señal, y avisos por sector con notificaciones web.
 - Más historia → estimaciones por franja horaria.
 
 ---

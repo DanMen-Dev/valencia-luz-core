@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapaReportes, type Foco } from './components/MapaReportes';
 import { Panel } from './components/Panel';
 import { useReportes } from './hooks/useReportes';
+import { useInstalar } from './hooks/useInstalar';
 import { HORAS_POR_DEFECTO, confirmarSector, enVenezuela, enviarReporte, obtenerConfig, ubicacionActual } from './lib/api';
 import type { Grupo } from './lib/agrupar';
 import type { Aviso } from './types';
@@ -15,6 +16,7 @@ function focoInicial(): Foco | null {
 
 export default function App() {
   const estado = useReportes();
+  const { puedeInstalar, instalar } = useInstalar();
   const [whatsapp, setWhatsapp] = useState('');
   const [horas, setHoras] = useState(HORAS_POR_DEFECTO);
   const [aviso, setAviso] = useState<Aviso>(null);
@@ -40,7 +42,8 @@ export default function App() {
       setFoco({ lat, lon, zoom: 15 });
       await estado.recargar();
     } catch (e) {
-      setAviso({ tipo: 'error', texto: (e as Error).message });
+      const sinRed = !navigator.onLine || e instanceof TypeError;
+      setAviso({ tipo: 'error', texto: sinRed ? 'Sin conexión: tu reporte no se envió. Intenta de nuevo cuando vuelva la señal.' : (e as Error).message });
     } finally {
       setEnviando(false);
     }
@@ -54,7 +57,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Panel {...estado} whatsapp={whatsapp} horas={horas} aviso={aviso} enviando={enviando} onReportar={reportar} />
+      <Panel {...estado} whatsapp={whatsapp} horas={horas} puedeInstalar={puedeInstalar} onInstalar={() => void instalar()} aviso={aviso} enviando={enviando} onReportar={reportar} />
       <main className="contenedor-mapa">
         <MapaReportes reportes={estado.reportes} foco={foco} onConfirmar={confirmar} />
       </main>

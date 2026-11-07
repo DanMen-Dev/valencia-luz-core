@@ -1,0 +1,16 @@
+{
+  "name": "Radar · Cortes de luz",
+  "short_name": "Radar",
+  "description": "Mapa en vivo de cortes de luz en Venezuela, con reportes de los vecinos.",
+  "lang": "es",
+  "start_url": "/mapa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    { "src": "/recursos/icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/recursos/icono-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/recursos/icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

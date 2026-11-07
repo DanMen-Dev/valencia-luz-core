@@ -14,8 +14,17 @@ describe('enVenezuela', () => {
 describe('obtenerReportes', () => {
   it('descarta reportes con coordenadas fuera de Venezuela', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta([reporte({ id: 1 }), reporte({ id: 2, lat: 40, lon: 3 })])));
-    const datos = await obtenerReportes();
-    expect(datos.map(d => d.id)).toEqual([1]);
+    const { reportes, guardadoEn } = await obtenerReportes();
+    expect(reportes.map(d => d.id)).toEqual([1]);
+    expect(guardadoEn).toBeNull();
+  });
+
+  it('marca la hora de la copia guardada cuando no hay conexion (service worker)', async () => {
+    const r = respuesta([reporte()]);
+    r.headers.set('X-Radar-Guardado', '2026-11-07T13:40:00.000Z');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(r));
+    const { guardadoEn } = await obtenerReportes();
+    expect(guardadoEn?.toISOString()).toBe('2026-11-07T13:40:00.000Z');
   });
 
   it('falla si el gateway responde con error', async () => {

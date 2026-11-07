@@ -18,6 +18,8 @@ h1 { margin: 0; font-size: 22px; color: var(--acento); font-weight: 800; }
 .btn-volvio { background: #2b2b2b; color: var(--amarillo); border: 1px solid #3a3a3a; }
 .btn-wa { background: var(--verde); color: #0b2b16; }
 .btn[hidden] { display: none; }
+.btn-instalar { background: transparent; color: var(--acento); border: 1px dashed var(--acento); }
+.sin-conexion { margin: 0; padding: 8px 10px; border-radius: 6px; background: #3a2a10; color: #ffcc80; font-size: 12px; line-height: 1.4; }
 .aviso { margin: 0; min-height: 1.2em; font-size: 13px; line-height: 1.4; }
 .aviso.ok { color: #8fd694; } .aviso.error { color: var(--rojo); }
 .leyenda { background: var(--caja); border-radius: 8px; padding: 12px; font-size: 12px; color: #ccc; }
@@ -50,3 +52,6 @@ h1 { margin: 0; font-size: 22px; color: var(--acento); font-weight: 800; }
 .btn-pop:disabled { opacity: .6; cursor: wait; }
 .pop .gracias { color: #8fd694; font-weight: 700; }
 .pop .error-pop { color: var(--rojo); font-size: 12px; }
+/* Fondo vectorial (MapLibre) debajo de las capas de Leaflet; no recibe gestos */
+.leaflet-container .fondo-vectorial { position: absolute; inset: 0; z-index: 100; pointer-events: none; }
+.leaflet-container { background: #e9e6df; }

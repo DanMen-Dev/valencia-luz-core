@@ -11,12 +11,19 @@ export function enVenezuela(lat: number, lon: number): boolean {
     lon >= VENEZUELA.lonMin && lon <= VENEZUELA.lonMax;
 }
 
-export async function obtenerReportes(senal?: AbortSignal): Promise<Reporte[]> {
+export interface Lectura {
+  reportes: Reporte[];
+  guardadoEn: Date | null;   // con valor: sin conexion, es la copia que guardo el service worker a esa hora
+}
+
+export async function obtenerReportes(senal?: AbortSignal): Promise<Lectura> {
   const r = await fetch('/api/v1/mapa/circuitos', { cache: 'no-store', signal: senal });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const datos: unknown = await r.json();
-  if (!Array.isArray(datos)) return [];
-  return (datos as Reporte[]).filter(d => enVenezuela(Number(d.lat), Number(d.lon)));
+  const marca = r.headers.get('X-Radar-Guardado');
+  const guardadoEn = marca && !Number.isNaN(Date.parse(marca)) ? new Date(marca) : null;
+  const reportes = Array.isArray(datos) ? (datos as Reporte[]).filter(d => enVenezuela(Number(d.lat), Number(d.lon))) : [];
+  return { reportes, guardadoEn };
 }
 
 export async function obtenerConfig(): Promise<Config> {

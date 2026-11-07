@@ -22,10 +22,14 @@ app.use((req, res, next) => {
     'X-Frame-Options': 'DENY',
     'Content-Security-Policy': [
       "default-src 'self'",
-      "img-src 'self' data: https://*.tile.openstreetmap.org",
+      // OpenFreeMap: estilo, calles, letras e iconos del fondo vectorial; OpenStreetMap: el respaldo en imagenes
+      "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tiles.openfreemap.org",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self'",
-      "connect-src 'self'",
+      "connect-src 'self' https://tiles.openfreemap.org",
+      "worker-src 'self' blob:",   // MapLibre dibuja con workers creados desde blob:
+      "child-src blob:",
+      "manifest-src 'self'",
       "frame-ancestors 'none'",
     ].join('; '),
   });
@@ -43,6 +47,9 @@ app.use('/recursos', express.static(PUBLICO, {
 }));
 
 app.get('/', (req, res) => res.redirect('/mapa'));
+// El service worker se sirve en la raiz para poder controlar /mapa (desde /recursos solo controlaria /recursos)
+app.get('/sw.js', (req, res) => res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' })
+  .sendFile(path.join(PUBLICO, 'sw.js')));
 app.get('/mapa', (req, res) => res.set('Cache-Control', 'no-cache').sendFile(path.join(PUBLICO, 'index.html')));
 app.get('/salud', (req, res) => res.json({ status: 'online', modulo: 'Gateway del mapa de Radar' }));
 
