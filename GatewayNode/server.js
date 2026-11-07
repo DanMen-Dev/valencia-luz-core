@@ -32,11 +32,17 @@ app.use((req, res, next) => {
 });
 
 app.use('/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '7d' }));
-// /static lo toma el nginx de Brecha-Cero (archivos de Django), por eso los del mapa van en /recursos
-app.use('/recursos', express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
+// La app de React (frontend/, compilada en la imagen) vive en public/. /static lo toma el nginx de Brecha-Cero,
+// por eso sus archivos van en /recursos. Los de assets/ llevan hash en el nombre: se pueden guardar un año.
+const PUBLICO = path.join(__dirname, 'public');
+app.use('/recursos', express.static(PUBLICO, {
+  index: false,
+  setHeaders: (res, ruta) => res.set('Cache-Control',
+    ruta.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'public, max-age=300'),
+}));
 
 app.get('/', (req, res) => res.redirect('/mapa'));
-app.get('/mapa', (req, res) => res.sendFile(path.join(__dirname, 'public', 'mapa.html')));
+app.get('/mapa', (req, res) => res.set('Cache-Control', 'no-cache').sendFile(path.join(PUBLICO, 'index.html')));
 app.get('/salud', (req, res) => res.json({ status: 'online', modulo: 'Gateway del mapa de Radar' }));
 
 app.get('/api/v1/config', (req, res) => res.json({ whatsapp: WHATSAPP }));

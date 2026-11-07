@@ -14,8 +14,8 @@ services:
 
   orquestador-node:
     build:
-      context: ./GatewayNode
-      dockerfile: Dockerfile
+      context: .                        # raiz: la imagen compila frontend/ (React) y copia GatewayNode/
+      dockerfile: GatewayNode/Dockerfile
     container_name: luz_gateway_node
     ports:
       - "127.0.0.1:5050:5000"
