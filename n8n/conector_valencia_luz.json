@@ -174,7 +174,7 @@
             {
               "id": "dce7d744-954a-5c27-a079-597315b252df",
               "name": "mensaje",
-              "value": "📡 *Radar* · cortes de luz reportados por los vecinos, en vivo.\n\n• *Reportar un corte:* envía tu ubicación 📍 y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://radar.brecha-cero.com/mapa",
+              "value": "📡 *Radar* · cortes de luz reportados por los vecinos, en vivo.\n\n• *Reportar un corte:* envía tu ubicación 📍 (en Telegram, con el botón de abajo) y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://radar.brecha-cero.com/mapa",
               "type": "string"
             }
           ]

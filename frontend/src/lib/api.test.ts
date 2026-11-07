@@ -68,14 +68,14 @@ describe('confirmarSector', () => {
 
 describe('obtenerConfig', () => {
   it('lee el numero de WhatsApp y las horas de vencimiento', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ whatsapp: '584141234567', horas: 4 })));
-    expect(await obtenerConfig()).toEqual({ whatsapp: '584141234567', horas: 4 });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ whatsapp: '584141234567', telegram: 'RadarCortesBot', horas: 4 })));
+    expect(await obtenerConfig()).toEqual({ whatsapp: '584141234567', telegram: 'RadarCortesBot', horas: 4 });
   });
 
   it('usa 6 horas si el gateway no las manda o falla', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ whatsapp: '' })));
     expect((await obtenerConfig()).horas).toBe(6);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({}, 502)));
-    expect(await obtenerConfig()).toEqual({ whatsapp: '', horas: 6 });
+    expect(await obtenerConfig()).toEqual({ whatsapp: '', telegram: '', horas: 6 });
   });
 });

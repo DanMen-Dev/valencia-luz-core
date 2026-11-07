@@ -1,0 +1,252 @@
+{
+  "name": "Radar: bot de Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -600,
+        0
+      ],
+      "id": "d66fdba1-76f5-5244-863f-c10adaf961cd",
+      "name": "Telegram",
+      "webhookId": "e510a0bd-474a-5875-a196-95bc818e579f"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Adapta un mensaje de Telegram al formato de evento que ya entiende el Conector (el mismo de Chatwoot).\n// Asi el Conector, el backend y sus reglas no cambian: Telegram es solo otro canal de entrada.\nconst salida = [];\nfor (const item of $input.all()) {\n  const m = item.json.message || {};\n  const chat = m.chat || {};\n  if (chat.type !== 'private' || !chat.id) continue;           // solo conversaciones directas con el bot\n\n  let texto = String(m.text || '').trim();\n  if (/^\\/(start|ayuda|help)\\b/i.test(texto) || /^❓/.test(texto)) texto = 'hola';   // comandos -> bienvenida\n\n  const evento = {\n    event: 'message_created',\n    message_type: 'incoming',\n    content: texto,\n    attachments: m.location\n      ? [{ file_type: 'location', coordinates_lat: m.location.latitude, coordinates_long: m.location.longitude }]\n      : [],\n    // El backend identifica al vecino por \"telefono\": en Telegram es el id del chat (solo digitos)\n    conversation: { meta: { sender: { phone_number: String(chat.id) } } },\n  };\n  salida.push({ json: { chat_id: chat.id, data: JSON.stringify(evento) } });\n}\nreturn salida;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        0
+      ],
+      "id": "8917de39-54e7-569a-8209-9c150ea9edd8",
+      "name": "Adaptar mensaje"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/reporte-comunitario-luz",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: $json.data }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -160,
+        0
+      ],
+      "id": "1c04f97d-7523-58b3-98d5-536ee23f1b12",
+      "name": "Conector"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0c11456b-2d30-5410-9b60-d4edbc34cadc",
+              "leftValue": "={{ $json.mensaje_confirmacion }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        60,
+        0
+      ],
+      "id": "77388c4d-329d-5002-8c05-d35303c426ab",
+      "name": "¿Hay respuesta?"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Adaptar mensaje').item.json.chat_id }}",
+        "text": "={{ $('Conector').item.json.mensaje_confirmacion }}",
+        "replyMarkup": "replyKeyboard",
+        "replyKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "📍 Enviar mi ubicación",
+                    "additionalFields": {
+                      "request_location": true
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "❓ Ayuda",
+                    "additionalFields": {}
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "replyKeyboardOptions": {
+          "resize_keyboard": true
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        280,
+        -20
+      ],
+      "id": "f8b3d167-1f53-5b2c-a083-b77752fda373",
+      "name": "Responder",
+      "webhookId": "39a3750d-6f45-5ff1-bef3-88185c4e6d5d",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Adaptar mensaje').item.json.chat_id }}",
+        "text": "={{ $('Conector').item.json.mensaje_confirmacion }}",
+        "replyMarkup": "replyKeyboard",
+        "replyKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "📍 Enviar mi ubicación",
+                    "additionalFields": {
+                      "request_location": true
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "❓ Ayuda",
+                    "additionalFields": {}
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "replyKeyboardOptions": {
+          "resize_keyboard": true
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        100
+      ],
+      "id": "8cac9b52-a760-56d3-9a63-e4d43d80226b",
+      "name": "Responder sin formato",
+      "webhookId": "f315261b-b7f6-5dbf-ac20-0394de7b86ae"
+    }
+  ],
+  "pinData": {},
+  "active": false,
+  "connections": {
+    "Telegram": {
+      "main": [
+        [
+          {
+            "node": "Adaptar mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adaptar mensaje": {
+      "main": [
+        [
+          {
+            "node": "Conector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conector": {
+      "main": [
+        [
+          {
+            "node": "¿Hay respuesta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay respuesta?": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Responder sin formato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

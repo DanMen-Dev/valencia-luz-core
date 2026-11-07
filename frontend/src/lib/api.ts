@@ -28,9 +28,13 @@ export async function obtenerReportes(senal?: AbortSignal): Promise<Lectura> {
 
 export async function obtenerConfig(): Promise<Config> {
   const r = await fetch('/api/v1/config');
-  if (!r.ok) return { whatsapp: '', horas: HORAS_POR_DEFECTO };
+  if (!r.ok) return { whatsapp: '', telegram: '', horas: HORAS_POR_DEFECTO };
   const c = (await r.json()) as Partial<Config>;
-  return { whatsapp: c.whatsapp || '', horas: Number(c.horas) > 0 ? Number(c.horas) : HORAS_POR_DEFECTO };
+  return {
+    whatsapp: c.whatsapp || '',
+    telegram: c.telegram || '',
+    horas: Number(c.horas) > 0 ? Number(c.horas) : HORAS_POR_DEFECTO,
+  };
 }
 
 export async function enviarReporte(latitud: number, longitud: number, tieneLuz: 0 | 1): Promise<RespuestaReporte> {

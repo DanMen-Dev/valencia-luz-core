@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Panel } from './Panel';
+import { Panel, textoCompartir } from './Panel';
 import { reporte } from '../test/datos';
 
 const base = {
@@ -33,9 +33,9 @@ describe('Panel', () => {
 
   it('oculta el boton de WhatsApp sin numero y lo enlaza cuando hay uno', () => {
     const { rerender } = render(<Panel {...base} />);
-    expect(screen.queryByRole('link', { name: /WhatsApp/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Reportar por WhatsApp/ })).not.toBeInTheDocument();
     rerender(<Panel {...base} whatsapp="584141234567" />);
-    expect(screen.getByRole('link', { name: /WhatsApp/ })).toHaveAttribute('href', 'https://wa.me/584141234567?text=Hola');
+    expect(screen.getByRole('link', { name: /Reportar por WhatsApp/ })).toHaveAttribute('href', 'https://wa.me/584141234567?text=Hola');
   });
 
   it('cada boton reporta su estado y se bloquean mientras se envia', async () => {
@@ -67,5 +67,19 @@ describe('Panel', () => {
     expect(screen.getByText(/Instalar Radar en tu iPhone/)).toBeInTheDocument();
     expect(screen.getByText('Agregar a inicio')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Instalar Radar/ })).not.toBeInTheDocument();
+  });
+
+  it('enlaza el bot de Telegram cuando esta configurado', () => {
+    const { rerender } = render(<Panel {...base} />);
+    expect(screen.queryByRole('link', { name: /Telegram/ })).not.toBeInTheDocument();
+    rerender(<Panel {...base} telegram="RadarCortesBot" />);
+    expect(screen.getByRole('link', { name: /Reportar por Telegram/ })).toHaveAttribute('href', 'https://t.me/RadarCortesBot');
+  });
+
+  it('siempre ofrece compartir el mapa por WhatsApp, sin numero de bot', () => {
+    render(<Panel {...base} />);
+    const enlace = screen.getByRole('link', { name: /Compartir el mapa por WhatsApp/ });
+    expect(enlace.getAttribute('href')).toBe(`https://wa.me/?text=${encodeURIComponent(textoCompartir())}`);
+    expect(textoCompartir('https://radar.brecha-cero.com')).toContain('https://radar.brecha-cero.com/mapa');
   });
 });

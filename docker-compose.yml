@@ -24,6 +24,7 @@ services:
       - PORT=5000
       - VL_HORAS_CORTE=${VL_HORAS_CORTE:-6}
       - VL_WHATSAPP=${VL_WHATSAPP:-}   # numero del bot para el boton del mapa (en .env); vacio = boton oculto
+      - VL_TELEGRAM=${VL_TELEGRAM:-RadarCortesBot}   # usuario del bot de Telegram (boton del mapa)
     restart: always
     depends_on:
       - motor-python
@@ -38,7 +39,7 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      - WEBHOOK_URL=http://n8n.brecha-cero.com/
+      - WEBHOOK_URL=https://n8n.brecha-cero.com/   # https: Telegram solo envia mensajes a webhooks con TLS
       - N8N_SECURE_COOKIE=false
     volumes:
       - n8n_data_storage:/home/node/.n8n

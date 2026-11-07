@@ -17,6 +17,8 @@ h1 { margin: 0; font-size: 22px; color: var(--acento); font-weight: 800; }
 .btn-corte { background: var(--acento); color: #121212; }
 .btn-volvio { background: #2b2b2b; color: var(--amarillo); border: 1px solid #3a3a3a; }
 .btn-wa { background: var(--verde); color: #0b2b16; }
+.btn-tg { background: #229ed9; color: #fff; }
+.btn-compartir { background: transparent; color: var(--verde); border: 1px solid var(--verde); }
 .btn[hidden] { display: none; }
 .btn-instalar { background: transparent; color: var(--acento); border: 1px dashed var(--acento); }
 .ayuda-instalar { border: 1px dashed #444; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #ccc; }

@@ -10,6 +10,7 @@ interface Props {
   onInstalar?: () => void;
   ayudaInstalar?: 'ios' | 'android' | null;
   whatsapp: string;
+  telegram?: string;
   horas: number;
   aviso: Aviso;
   enviando: boolean;
@@ -27,10 +28,14 @@ function resumen({ reportes, cargando, error, actualizado, horas }: Pick<Props, 
     : `${sin} sin luz · ${con} con luz (últimas ${horas} h) · actualizado ${hora}`;
 }
 
+export function textoCompartir(origen = window.location.origin) {
+  return `📡 Radar: mapa en vivo de cortes de luz reportados por los vecinos. Mira tu sector y reporta: ${origen}/mapa`;
+}
+
 const horaCorta = (d: Date) => d.toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' });
 
 export function Panel(props: Props) {
-  const { whatsapp, aviso, enviando, onReportar, guardadoEn, puedeInstalar, onInstalar, ayudaInstalar } = props;
+  const { whatsapp, telegram, aviso, enviando, onReportar, guardadoEn, puedeInstalar, onInstalar, ayudaInstalar } = props;
   return (
     <aside className="panel">
       <header>
@@ -45,12 +50,22 @@ export function Panel(props: Props) {
         <button type="button" className="btn btn-volvio" disabled={enviando} onClick={() => onReportar(1)}>
           💡 Ya volvió la luz donde estoy
         </button>
+        {telegram && (
+          <a className="btn btn-tg" href={`https://t.me/${telegram}`} target="_blank" rel="noopener noreferrer">
+            💬 Reportar por Telegram (gratis)
+          </a>
+        )}
         {whatsapp && (
           <a className="btn btn-wa" href={`https://wa.me/${whatsapp}?text=${encodeURIComponent('Hola')}`}
              target="_blank" rel="noopener noreferrer">
             💬 Reportar por WhatsApp
           </a>
         )}
+        {/* Difundir no le cuesta nada al proyecto: son los vecinos compartiendo el enlace en sus grupos */}
+        <a className="btn btn-compartir" href={`https://wa.me/?text=${encodeURIComponent(textoCompartir())}`}
+           target="_blank" rel="noopener noreferrer">
+          📤 Compartir el mapa por WhatsApp
+        </a>
         {puedeInstalar && onInstalar && (
           <button type="button" className="btn btn-instalar" onClick={onInstalar}>📲 Instalar Radar</button>
         )}

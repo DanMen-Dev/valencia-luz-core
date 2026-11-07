@@ -13,6 +13,7 @@ export interface Reporte {
 
 export interface Config {
   whatsapp: string;
+  telegram: string;   // usuario del bot de Telegram, sin @
   horas: number;   // un corte sin noticias vence a estas horas (VL_HORAS_CORTE)
 }
 

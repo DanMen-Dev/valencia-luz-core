@@ -18,13 +18,14 @@ export default function App() {
   const estado = useReportes();
   const { puedeInstalar, instalar, ayuda } = useInstalar();
   const [whatsapp, setWhatsapp] = useState('');
+  const [telegram, setTelegram] = useState('');
   const [horas, setHoras] = useState(HORAS_POR_DEFECTO);
   const [aviso, setAviso] = useState<Aviso>(null);
   const [enviando, setEnviando] = useState(false);
   const [foco, setFoco] = useState<Foco | null>(focoInicial);
 
   useEffect(() => {
-    obtenerConfig().then(c => { setWhatsapp(c.whatsapp); setHoras(c.horas); }).catch(() => {});
+    obtenerConfig().then(c => { setWhatsapp(c.whatsapp); setTelegram(c.telegram); setHoras(c.horas); }).catch(() => {});
   }, []);
 
   async function reportar(tieneLuz: 0 | 1) {
@@ -57,7 +58,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Panel {...estado} whatsapp={whatsapp} horas={horas} puedeInstalar={puedeInstalar} ayudaInstalar={ayuda} onInstalar={() => void instalar()} aviso={aviso} enviando={enviando} onReportar={reportar} />
+      <Panel {...estado} whatsapp={whatsapp} telegram={telegram} horas={horas} puedeInstalar={puedeInstalar} ayudaInstalar={ayuda} onInstalar={() => void instalar()} aviso={aviso} enviando={enviando} onReportar={reportar} />
       <main className="contenedor-mapa">
         <MapaReportes reportes={estado.reportes} foco={foco} onConfirmar={confirmar} />
       </main>
