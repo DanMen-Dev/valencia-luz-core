@@ -22,3 +22,9 @@ export interface RespuestaReporte {
 }
 
 export type Aviso = { texto: string; tipo: 'ok' | 'error' | 'info' } | null;
+
+export interface RespuestaConfirmacion {
+  status: string;
+  zona: string;
+  tiene_luz: 0 | 1;
+}

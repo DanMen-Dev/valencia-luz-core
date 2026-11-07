@@ -188,6 +188,11 @@ class ReporteWeb(Coordenadas):
     zona: str = ""
 
 
+class Confirmacion(Coordenadas):
+    zona: str
+    tiene_luz: int
+
+
 # ---------- Reportes -----------------------------------------------------------------
 
 # 1. Ubicacion enviada por WhatsApp: queda pendiente hasta que el usuario diga su sector
@@ -271,6 +276,31 @@ async def reportar_web(data: ReporteWeb):
             VALUES ('web', ?, ?, ?, ?, ?, ?, 'web')
         """, (data.latitud, data.longitud, zona or "sin zona", zona, tiene_luz, texto_hora()))
     return {"status": "success", "circuito_asignado": (zona or "sin zona").upper(), "tiene_luz": tiene_luz}
+
+
+# 4. "Yo tambien" desde el mapa: suma un reporte a un sector que YA tiene reportes activos cerca.
+#    No crea sectores nuevos: solo confirma (o contradice) lo que otros vecinos reportaron.
+KM_CONFIRMACION = 2.0
+
+
+@app.post("/api/confirmar")
+async def confirmar(data: Confirmacion):
+    zona = normalizar_zona(data.zona)
+    if not zona:
+        raise HTTPException(status_code=422, detail="Falta el sector.")
+    tiene_luz = 1 if data.tiene_luz == 1 else 0
+    with closing(conectar()) as conn, conn:
+        filas = conn.execute(
+            "SELECT latitud, longitud FROM circuitos WHERE zona = ? AND timestamp >= ? AND nombre_zona != ?",
+            (zona, texto_hora(restar_horas=HORAS_MAPA), PENDIENTE)).fetchall()
+        if not any(distancia_km(data.latitud, data.longitud, f["latitud"], f["longitud"]) <= KM_CONFIRMACION
+                   for f in filas):
+            raise HTTPException(status_code=404, detail="Ese sector no tiene reportes activos cerca.")
+        conn.execute("""
+            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen)
+            VALUES ('web', ?, ?, ?, ?, ?, ?, 'confirmacion')
+        """, (data.latitud, data.longitud, zona, zona, tiene_luz, texto_hora()))
+    return {"status": "success", "zona": zona.upper(), "tiene_luz": tiene_luz}
 
 
 # ---------- Estadisticas por zona ----------------------------------------------------

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { MapaReportes, type Foco } from './components/MapaReportes';
 import { Panel } from './components/Panel';
 import { useReportes } from './hooks/useReportes';
-import { enVenezuela, enviarReporte, obtenerConfig, ubicacionActual } from './lib/api';
+import { confirmarSector, enVenezuela, enviarReporte, obtenerConfig, ubicacionActual } from './lib/api';
+import type { Grupo } from './lib/agrupar';
 import type { Aviso } from './types';
 
 // ?lat=..&lon=.. (enlace desde WhatsApp): el mapa abre centrado en esa ubicacion
@@ -44,11 +45,17 @@ export default function App() {
     }
   }
 
+  // "Yo tambien" desde el popup de un grupo: no pide ubicacion, usa el centro del grupo
+  async function confirmar(g: Grupo, tieneLuz: 0 | 1) {
+    await confirmarSector(g.zona, g.lat, g.lon, tieneLuz);
+    void estado.recargar();
+  }
+
   return (
     <div className="app">
       <Panel {...estado} whatsapp={whatsapp} aviso={aviso} enviando={enviando} onReportar={reportar} />
       <main className="contenedor-mapa">
-        <MapaReportes reportes={estado.reportes} foco={foco} />
+        <MapaReportes reportes={estado.reportes} foco={foco} onConfirmar={confirmar} />
       </main>
     </div>
   );

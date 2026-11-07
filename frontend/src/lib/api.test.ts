@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { enVenezuela, enviarReporte, obtenerReportes } from './api';
+import { confirmarSector, enVenezuela, enviarReporte, obtenerReportes } from './api';
 import { reporte, respuesta } from '../test/datos';
 
 describe('enVenezuela', () => {
@@ -38,5 +38,21 @@ describe('enviarReporte', () => {
   it('muestra el mensaje de error que devuelve el gateway', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ error: 'Esa ubicación está fuera de Venezuela.' }, 422)));
     await expect(enviarReporte(4.7, -74.0, 0)).rejects.toThrow('Esa ubicación está fuera de Venezuela.');
+  });
+});
+
+describe('confirmarSector', () => {
+  it('manda el sector, el centro del grupo y el estado', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respuesta({ status: 'success', zona: 'PREBO', tiene_luz: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await confirmarSector('prebo', 10.21, -68.0, 0);
+    const [url, opciones] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/v1/confirmar');
+    expect(JSON.parse(opciones.body)).toEqual({ zona: 'prebo', latitud: 10.21, longitud: -68.0, tiene_luz: 0 });
+  });
+
+  it('pasa el mensaje de error del gateway', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ error: 'Ese sector ya no tiene reportes activos.' }, 404)));
+    await expect(confirmarSector('prebo', 10.21, -68.0, 0)).rejects.toThrow('Ese sector ya no tiene reportes activos.');
   });
 });

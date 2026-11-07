@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { PopupGrupo } from './PopupGrupo';
 import { agrupar } from '../lib/agrupar';
 import { reporte } from '../test/datos';
@@ -43,5 +44,52 @@ describe('PopupGrupo', () => {
   it('sin sector muestra un nombre por defecto', () => {
     render(<PopupGrupo g={grupo(reporte({ nombre_zona: 'sector sin nombre' }))} />);
     expect(screen.getByText(/SECTOR SIN NOMBRE/)).toBeInTheDocument();
+  });
+
+  it('"Yo tambien" confirma el estado del grupo y agradece', async () => {
+    const onConfirmar = vi.fn().mockResolvedValue(undefined);
+    const g = grupo(reporte());
+    render(<PopupGrupo g={g} onConfirmar={onConfirmar} />);
+    await userEvent.click(screen.getByRole('button', { name: /Yo también estoy sin luz/ }));
+    expect(onConfirmar).toHaveBeenCalledWith(g, 0);
+    expect(await screen.findByText(/Tu reporte de corte ya cuenta/)).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('el segundo boton contradice el estado: "Aqui ya volvio"', async () => {
+    const onConfirmar = vi.fn().mockResolvedValue(undefined);
+    render(<PopupGrupo g={grupo(reporte())} onConfirmar={onConfirmar} />);
+    await userEvent.click(screen.getByRole('button', { name: /Aquí ya volvió/ }));
+    expect(onConfirmar.mock.calls[0][1]).toBe(1);
+    expect(await screen.findByText(/aviso de que hay luz ya cuenta/)).toBeInTheDocument();
+  });
+
+  it('si el grupo ya tiene luz, ofrece "A mi tambien me volvio" y "Yo sigo sin luz"', () => {
+    render(<PopupGrupo g={grupo(reporte({ tiene_luz: 1 }))} onConfirmar={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /A mí también me volvió/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Yo sigo sin luz/ })).toBeInTheDocument();
+  });
+
+  it('muestra el error y deja intentar de nuevo', async () => {
+    const onConfirmar = vi.fn().mockRejectedValue(new Error('Ese sector ya no tiene reportes activos.'));
+    render(<PopupGrupo g={grupo(reporte())} onConfirmar={onConfirmar} />);
+    await userEvent.click(screen.getByRole('button', { name: /Yo también/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ese sector ya no tiene reportes activos.');
+    expect(screen.getByRole('button', { name: /Yo también/ })).toBeEnabled();
+  });
+
+  it('no vuelve a ofrecer el boton en este navegador despues de confirmar', async () => {
+    const g = grupo(reporte());
+    const { unmount } = render(<PopupGrupo g={g} onConfirmar={vi.fn().mockResolvedValue(undefined)} />);
+    await userEvent.click(screen.getByRole('button', { name: /Yo también/ }));
+    await screen.findByText(/ya cuenta/);
+    unmount();
+    render(<PopupGrupo g={g} onConfirmar={vi.fn()} />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('sin sector no ofrece confirmar', () => {
+    render(<PopupGrupo g={grupo(reporte({ nombre_zona: 'sector sin nombre' }))} onConfirmar={vi.fn()} />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });

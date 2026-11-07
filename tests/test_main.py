@@ -153,6 +153,39 @@ def test_el_mapa_no_inventa_el_retorno(app_mod, cliente):
     assert cliente.get("/api/mapa/activos").json()[0]["hora_estimada"] == "Sin estimación (faltan datos)"
 
 
+def test_yo_tambien_suma_un_reporte_al_sector(app_mod, cliente):
+    insertar(app_mod, "prebo", 0, app_mod.ahora() - timedelta(hours=1))
+    r = cliente.post("/api/confirmar", json={"zona": "Prebo", "latitud": 10.2150, "longitud": -68.0110, "tiene_luz": 0})
+    assert r.status_code == 200 and r.json()["zona"] == "PREBO"
+    mapa = cliente.get("/api/mapa/activos").json()
+    assert len(mapa) == 2 and {m["nombre_zona"] for m in mapa} == {"prebo"}
+    with sqlite3.connect(app_mod.DB_PATH) as c:
+        assert c.execute("SELECT origen FROM circuitos WHERE telefono = 'web'").fetchone()[0] == "confirmacion"
+
+
+def test_yo_tambien_puede_decir_que_volvio(app_mod, cliente):
+    insertar(app_mod, "prebo", 0, app_mod.ahora() - timedelta(hours=1))
+    r = cliente.post("/api/confirmar", json={"zona": "prebo", "latitud": 10.2134, "longitud": -68.0125, "tiene_luz": 1})
+    assert r.json()["tiene_luz"] == 1
+
+
+@pytest.mark.parametrize("cuerpo, codigo", [
+    ({"zona": "guaparo", "latitud": 10.2134, "longitud": -68.0125, "tiene_luz": 0}, 404),   # sector sin reportes
+    ({"zona": "prebo", "latitud": 10.40, "longitud": -68.0125, "tiene_luz": 0}, 404),      # lejos del sector
+    ({"zona": "  ", "latitud": 10.2134, "longitud": -68.0125, "tiene_luz": 0}, 422),       # sin sector
+    ({"zona": "prebo", "latitud": 4.71, "longitud": -74.07, "tiene_luz": 0}, 422),         # fuera de Venezuela
+])
+def test_yo_tambien_no_inventa_sectores(app_mod, cliente, cuerpo, codigo):
+    insertar(app_mod, "prebo", 0, app_mod.ahora() - timedelta(hours=1))
+    assert cliente.post("/api/confirmar", json=cuerpo).status_code == codigo
+
+
+def test_yo_tambien_ignora_reportes_viejos(app_mod, cliente):
+    insertar(app_mod, "prebo", 0, app_mod.ahora() - timedelta(hours=app_mod.HORAS_MAPA + 1))
+    r = cliente.post("/api/confirmar", json={"zona": "prebo", "latitud": 10.2134, "longitud": -68.0125, "tiene_luz": 0})
+    assert r.status_code == 404
+
+
 def test_los_pendientes_no_salen_en_el_mapa(cliente):
     gps(cliente)
     assert cliente.get("/api/mapa/activos").json() == []

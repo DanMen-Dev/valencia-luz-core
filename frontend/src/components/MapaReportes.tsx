@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import iconoUrl from 'leaflet/dist/images/marker-icon.png';
 import iconoRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import sombraUrl from 'leaflet/dist/images/marker-shadow.png';
-import { PopupGrupo } from './PopupGrupo';
+import { PopupGrupo, type Confirmar } from './PopupGrupo';
 import { agrupar, radioGrupo, type Grupo } from '../lib/agrupar';
 import type { Reporte } from '../types';
 
@@ -30,7 +30,7 @@ function Enfocar({ foco }: { foco: Foco | null }) {
   return null;
 }
 
-export function MapaReportes({ reportes, foco }: { reportes: Reporte[]; foco: Foco | null }) {
+export function MapaReportes({ reportes, foco, onConfirmar }: { reportes: Reporte[]; foco: Foco | null; onConfirmar?: Confirmar }) {
   const grupos = useMemo(() => agrupar(reportes), [reportes]);
   return (
     <MapContainer
@@ -47,7 +47,7 @@ export function MapaReportes({ reportes, foco }: { reportes: Reporte[]; foco: Fo
           radius={radioGrupo(g.total)}
           pathOptions={{ color: COLORES[g.estado], fillColor: COLORES[g.estado], fillOpacity: 0.4, weight: 1.5 }}
         >
-          <Popup><PopupGrupo g={g} /></Popup>
+          <Popup><PopupGrupo g={g} onConfirmar={onConfirmar} /></Popup>
         </Circle>
       ))}
       {grupos.filter(g => g.total > 1).map(g => (

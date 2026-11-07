@@ -1,4 +1,4 @@
-import type { Config, Reporte, RespuestaReporte } from '../types';
+import type { Config, Reporte, RespuestaConfirmacion, RespuestaReporte } from '../types';
 
 // Limites aproximados de Venezuela: el backend aplica los mismos al guardar
 const VENEZUELA = { latMin: 0.5, latMax: 12.6, lonMin: -73.5, lonMax: -59.5 };
@@ -32,6 +32,18 @@ export async function enviarReporte(latitud: number, longitud: number, tieneLuz:
   const cuerpo = (await r.json().catch(() => ({}))) as Partial<RespuestaReporte> & { error?: string };
   if (!r.ok) throw new Error(cuerpo.error || 'No se pudo registrar el reporte.');
   return cuerpo as RespuestaReporte;
+}
+
+// "Yo tambien": suma un reporte al sector de un grupo que ya existe (no pide la ubicacion del vecino)
+export async function confirmarSector(zona: string, latitud: number, longitud: number, tieneLuz: 0 | 1): Promise<RespuestaConfirmacion> {
+  const r = await fetch('/api/v1/confirmar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ zona, latitud, longitud, tiene_luz: tieneLuz }),
+  });
+  const cuerpo = (await r.json().catch(() => ({}))) as Partial<RespuestaConfirmacion> & { error?: string };
+  if (!r.ok) throw new Error(cuerpo.error || 'No se pudo registrar tu confirmación.');
+  return cuerpo as RespuestaConfirmacion;
 }
 
 export function ubicacionActual(): Promise<GeolocationPosition> {

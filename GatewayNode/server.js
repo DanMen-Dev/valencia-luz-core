@@ -91,6 +91,30 @@ app.post('/api/v1/reportar', async (req, res) => {
   }
 });
 
+// "Yo tambien": confirma o contradice un sector que ya tiene reportes (comparte el tope por IP con /reportar)
+app.post('/api/v1/confirmar', async (req, res) => {
+  const latitud = Number(req.body?.latitud);
+  const longitud = Number(req.body?.longitud);
+  const tiene_luz = Number(req.body?.tiene_luz);
+  const zona = String(req.body?.zona ?? '').trim().slice(0, 60);
+  if (!Number.isFinite(latitud) || !Number.isFinite(longitud) || ![0, 1].includes(tiene_luz) || !zona) {
+    return res.status(400).json({ error: 'Datos de la confirmación incompletos.' });
+  }
+  if (!permitido(req.ip)) {
+    return res.status(429).json({ error: 'Demasiados reportes desde esta conexión. Intenta más tarde.' });
+  }
+  try {
+    const r = await axios.post(`${BACKEND}/api/confirmar`, { zona, latitud, longitud, tiene_luz },
+      { timeout: 8000, validateStatus: () => true });
+    if (r.status === 404) return res.status(404).json({ error: 'Ese sector ya no tiene reportes activos.' });
+    if (r.status >= 400) return res.status(r.status).json({ error: 'El backend rechazó la confirmación.' });
+    res.json(r.data);
+  } catch (error) {
+    console.error('[GATEWAY] No se pudo enviar la confirmación al backend:', error.message);
+    res.status(502).json({ error: 'No se pudo conectar con el backend.' });
+  }
+});
+
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
 app.listen(PORT, () => console.log(`[GATEWAY] Mapa de Radar en el puerto ${PORT}`));
