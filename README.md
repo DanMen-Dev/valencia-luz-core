@@ -13,7 +13,7 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Parte | Estado |
 |---|---|
 | Mapa web y reporte desde el navegador | En producción |
-| Backend (API, estimaciones, respaldo diario) | En producción, 69 pruebas automáticas |
+| Backend (API, estimaciones, respaldo diario) | En producción, 85 pruebas automáticas |
 | Bot de Telegram [@RadarCortesBot](https://t.me/RadarCortesBot) (n8n) | En producción, gratis |
 | Canal de WhatsApp (n8n + Chatwoot) | Listo, sin número conectado: los mensajes del bot se cobran por mensaje |
 | Frontend en React + TypeScript (Vite) | En producción, 50 pruebas con Vitest y Testing Library |
@@ -44,7 +44,9 @@ El Conector de n8n no sabe de canales: cada canal tiene un flujo pequeño que tr
 
 1. El vecino envía su **ubicación** (en Telegram, con el botón "📍 Enviar mi ubicación"). El backend la guarda como pendiente y el bot le pide el nombre del sector (tiene 10 minutos).
 2. Responde **"Prebo"** (sin luz) o **"Si, Prebo"** (volvió la luz). El backend completa el reporte; el estado se lee del texto con reglas, no con IA.
-3. Si escribe una **consulta** ("¿cómo está la luz en Tocuyito?"), un único llamado al modelo extrae el sector y el backend devuelve el mensaje ya redactado con datos reales.
+3. Si **escribe** algo, un único llamado al modelo extrae el sector y sugiere la intención; el backend decide con reglas (una pregunta nunca es un reporte):
+   - **consulta** ("¿cómo está la luz en Tocuyito?"): responde el resumen con datos reales;
+   - **aviso** ("mira, se fue la luz en Tocuyito" / "ya volvió la luz en Prebo"): si el sector ya es conocido, queda reportado en el centro de su celda más votada y el bot confirma; si no, pide la ubicación.
 
 Saludos, ubicaciones y respuestas de sector se resuelven con reglas en un nodo de código; el modelo solo interviene en consultas libres. Antes el flujo usaba tres llamados (clasificar, extraer y redactar) y el redactor inventaba horas cuando faltaban datos.
 

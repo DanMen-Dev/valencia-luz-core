@@ -430,5 +430,70 @@ def test_el_bot_dice_que_sector_entendio(sectores):
     assert "Entendí" not in exacto
 
 
+# ---------- Reporte escrito
+
+@pytest.mark.parametrize("texto, sugerida, esperado", [
+    ("Mira se fue la luz en Tocuyito", "", "sin_luz"),
+    ("se nos fue la luz en prebo", "consulta", "sin_luz"),    # las reglas mandan sobre el modelo
+    ("apagón en Prebo", "", "sin_luz"),
+    ("ya llegó la luz en prebo", "", "volvio"),
+    ("ya hay luz en Tocuyito", "sin_luz", "volvio"),
+    ("¿se fue la luz en Prebo?", "sin_luz", "consulta"),      # una pregunta nunca es un reporte
+    ("cuantas horas sin luz en prebo", "", "consulta"),
+    ("hay luz en prebo", "", "consulta"),
+    ("estamos sin servicio en prebo", "sin_luz", "sin_luz"),   # sin regla: decide el modelo
+    ("info de prebo", "", "consulta"),
+])
+def test_intencion_de(app_mod, texto, sugerida, esperado):
+    assert app_mod.intencion_de(texto, sugerida) == esperado
+
+
+def escribir(cliente, texto, zona, intencion="", tel="584149999"):
+    return cliente.post("/api/reportar/texto", json={"telefono": tel, "texto": texto, "zona": zona, "intencion": intencion})
+
+
+def test_se_fue_la_luz_en_un_sector_conocido_queda_reportado(app_mod, sectores):
+    r = escribir(sectores, "Mira se fue la luz en Tocuyto", "Tocuyto").json()
+    assert r["tipo"] == "reporte" and r["tiene_luz"] == 0
+    assert "Anotado: *sin luz* en *TOCUYITO*" in r["mensaje"] and "Entendí TOCUYITO" in r["mensaje"]
+    with sqlite3.connect(app_mod.DB_PATH) as c:
+        fila = c.execute("SELECT zona, tiene_luz, origen, celda, latitud, longitud FROM circuitos "
+                         "WHERE origen = 'texto'").fetchone()
+        votos = c.execute("SELECT SUM(votos) FROM alias WHERE nombre = 'tocuyito'").fetchone()[0]
+    assert fila == ("tocuyito", 0, "texto", "10.10_-68.08", 10.105, -68.075)   # centro de la celda
+    assert votos == 2                                                          # el texto no vota
+    mapa = sectores.get("/api/mapa/activos").json()
+    assert any(m["nombre_zona"] == "tocuyito" and m["lat"] == 10.105 for m in mapa)
+
+
+def test_ya_volvio_la_luz_por_escrito(sectores):
+    r = escribir(sectores, "ya volvió la luz en prebo", "prebo").json()
+    assert r["tipo"] == "reporte" and r["tiene_luz"] == 1 and "volvió la luz" in r["mensaje"]
+
+
+def test_un_sector_desconocido_pide_la_ubicacion(app_mod, sectores):
+    r = escribir(sectores, "se fue la luz en Guaparo", "Guaparo").json()
+    assert r["tipo"] == "falta_ubicacion" and "GUAPARO" in r["mensaje"] and "ubicación" in r["mensaje"]
+    with sqlite3.connect(app_mod.DB_PATH) as c:
+        assert c.execute("SELECT COUNT(*) FROM circuitos WHERE origen = 'texto'").fetchone()[0] == 0
+
+
+def test_una_pregunta_responde_el_resumen_sin_reportar(sectores):
+    r = escribir(sectores, "¿se fue la luz en Prebo?", "Prebo", intencion="sin_luz").json()
+    assert r["tipo"] == "consulta" and "*Radar · PREBO*" in r["mensaje"]
+    assert r["mensaje"] == sectores.get("/api/analitica/historico", params={"zona": "Prebo"}).json()["mensaje"]
+
+
+def test_reporte_escrito_con_sector_ambiguo_pregunta(sectores):
+    r = escribir(sectores, "se fue la luz en Paado", "Paado").json()
+    assert r["tipo"] == "pregunta" and "¿te refieres a" in r["mensaje"]
+
+
+def test_el_reporte_escrito_respeta_el_tope_por_telefono(app_mod, sectores):
+    for _ in range(app_mod.REPORTES_POR_HORA):
+        assert escribir(sectores, "se fue la luz en prebo", "prebo").status_code == 200
+    assert escribir(sectores, "se fue la luz en prebo", "prebo").status_code == 429
+
+
 def test_salud(cliente):
     assert cliente.get("/api/salud").json()["status"] == "ok"

@@ -20,12 +20,17 @@ base='"event":"message_created","message_type":"incoming","conversation":{"id":0
 
 enviar "1. Saludo"            '{'"$base"',"content":"Hola"}'
 enviar "2. Ubicacion"         '{'"$base"',"content":"","attachments":[{"file_type":"location","coordinates_lat":10.2155,"coordinates_long":-68.0059}]}'
-enviar "3. Sector (volvio)"   '{'"$base"',"content":"Si, Prebo"}'
-enviar "4. Consulta (modelo)" '{'"$base"',"content":"buenas, como esta la luz en prebo?"}'
+# Sector de prueba con nombre unico: al final se borra sin tocar sectores reales
+enviar "3. Sector (volvio)"   '{'"$base"',"content":"Si, Radarprueba"}'
+enviar "4. Consulta (modelo)" '{'"$base"',"content":"buenas, como esta la luz en radarprueba?"}'
 enviar "5. Sin sector"        '{'"$base"',"content":"a que hora vuelve la luz?"}'
 enviar "6. Saliente (nada)"   '{"event":"message_created","message_type":"outgoing","content":"x"}'
+enviar "7. Reporte escrito"   '{'"$base"',"content":"mira se fue la luz en Radarprueva"}'
+enviar "8. Sector desconocido" '{'"$base"',"content":"se fue la luz en Sectorinventadox"}'
 
 docker exec luz_backend_python python -c "
 import sqlite3; c=sqlite3.connect('/app/datos/valencia_luz_persistente.db')
 n=c.execute(\"delete from circuitos where telefono='$TEL'\").rowcount
-c.execute(\"delete from conversaciones where telefono='$TEL'\"); c.commit(); print('reportes de prueba borrados:', n)"
+c.execute(\"delete from conversaciones where telefono='$TEL'\")
+c.execute(\"delete from alias where nombre='radarprueba'\")
+c.execute(\"delete from celdas where id not in (select celda from alias)\"); c.commit(); print('reportes de prueba borrados:', n)"

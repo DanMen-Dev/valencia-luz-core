@@ -84,6 +84,29 @@ def interpretar_respuesta(texto):
     return normalizar_zona(t), 0
 
 
+# Reporte escrito ("se fue la luz en Tocuyito"): reglas para la intencion. Mandan sobre lo que sugiere el
+# modelo; una pregunta ("¿se fue la luz en Prebo?") siempre es consulta, nunca reporte.
+RE_VOLVIO = re.compile(r"\b(volvio|regreso|llego|vino|ya (hay|tengo|tenemos)|prendio|restablec\w*)\b.{0,25}"
+                       r"\b(luz|electricidad|corriente)\b|\bya hay luz\b", re.IGNORECASE)
+RE_SE_FUE = re.compile(r"\b(se (nos )?fue|se va|no hay|sin|quitaron|cortaron|corte de|apagon|bajon)\b.{0,15}"
+                       r"\b(la )?(luz|electricidad|corriente)\b|\bapagon\b|\ba oscuras\b", re.IGNORECASE)
+RE_PREGUNTA = re.compile(r"^(cuant\w*|cuando|a que hora|como|donde|que tal|sabe\w*|alguien sabe|hay|y la luz)\b")
+INTENCIONES = ("consulta", "sin_luz", "volvio")
+
+
+def intencion_de(texto, sugerida=""):
+    """'consulta', 'sin_luz' o 'volvio'. Las reglas sobre el texto mandan; si no deciden, lo que sugiere el modelo."""
+    crudo = str(texto or "")
+    t = normalizar_zona(crudo)
+    if "?" in crudo or "¿" in crudo or RE_PREGUNTA.match(t):
+        return "consulta"
+    if RE_VOLVIO.search(t):
+        return "volvio"
+    if RE_SE_FUE.search(t):
+        return "sin_luz"
+    return sugerida if sugerida in INTENCIONES else "consulta"
+
+
 def zona_de(nombre_zona):
     """Compatibilidad con reportes viejos guardados como 'prebo-Lat:10.2-Lon:-68.0'."""
     base = str(nombre_zona or "").split("-Lat:")[0]
@@ -404,6 +427,13 @@ class ReporteWeb(Coordenadas):
     zona: str = ""
 
 
+class ReporteTexto(BaseModel):
+    telefono: str
+    texto: str = ""
+    zona: str = ""          # el sector que extrajo el modelo
+    intencion: str = ""     # lo que sugiere el modelo: consulta | sin_luz | volvio
+
+
 class Confirmacion(Coordenadas):
     zona: str
     tiene_luz: int
@@ -657,22 +687,30 @@ async def analitica_actual(zona: str):
 # 6. Resumen de una zona para el bot. Mantiene los nombres que lee el flujo de n8n (hora_corte, hora_retorno,
 #    duracion_promedio, reincidencia_detectada) pero con datos reales o un texto que dice que no los hay,
 #    nunca horas inventadas. 'mensaje' trae el texto listo para enviar.
-@app.get("/api/analitica/historico")
-async def analitica_historica(zona: str):
-    with closing(conectar()) as conn:
-        sector = resolver_sector(conn, zona)
-        if sector["metodo"] == "ambiguo":
-            opciones = " o ".join(f"*{c.upper()}*" for c in sector["candidatos"])
-            mensaje = (f"📡 *Radar*: ¿te refieres a {opciones}? "
-                       "Escribe el nombre del sector como lo conoces y te digo cómo está.")
-            return {"zona": sector["escrito"], "sector": sector, "mensaje": mensaje,
-                    "hora_corte": "por confirmar el sector", "hora_retorno": "por confirmar el sector",
-                    "duracion_promedio": "sin datos", "reincidencia_detectada": "No"}
-        r = resumen_zona(conn, sector["nombre"] or normalizar_zona(zona))
-    mensaje = mensaje_zona(r)
+def nota_entendido(sector):
+    """'(Entendí PREBO; escribiste «perbo».)' cuando el sector no es exactamente lo que se escribio."""
     if sector["metodo"] == "aproximado" or (sector["metodo"] == "exacto" and sector["nombre"] != sector["escrito"]):
-        # Se dice que se interpreto: el vecino ve si el sector es el que queria
-        mensaje = mensaje.replace("\n", f"\n_(Entendí {sector['nombre'].upper()}; escribiste «{sector['escrito']}».)_\n", 1)
+        return f"_(Entendí {sector['nombre'].upper()}; escribiste «{sector['escrito']}».)_"
+    return ""
+
+
+def pregunta_ambigua(sector):
+    opciones = " o ".join(f"*{c.upper()}*" for c in sector["candidatos"])
+    return f"📡 *Radar*: ¿te refieres a {opciones}? Escribe el nombre del sector como lo conoces y te digo cómo está."
+
+
+def consulta_sector(conn, zona):
+    """Resumen de un sector para el bot. Mantiene los campos que leia el flujo de n8n."""
+    sector = resolver_sector(conn, zona)
+    if sector["metodo"] == "ambiguo":
+        return {"zona": sector["escrito"], "sector": sector, "mensaje": pregunta_ambigua(sector),
+                "hora_corte": "por confirmar el sector", "hora_retorno": "por confirmar el sector",
+                "duracion_promedio": "sin datos", "reincidencia_detectada": "No"}
+    r = resumen_zona(conn, sector["nombre"] or normalizar_zona(zona))
+    mensaje = mensaje_zona(r)
+    nota = nota_entendido(sector)
+    if nota:   # el vecino ve si el sector es el que queria
+        mensaje = mensaje.replace("\n", f"\n{nota}\n", 1)
     return {
         "sector": sector,
         **r,
@@ -685,6 +723,52 @@ async def analitica_historica(zona: str):
         "reincidencia_detectada": "Sí" if r["cortes_hoy"] > 1 else "No",
         "mensaje": mensaje,
     }
+
+
+@app.get("/api/analitica/historico")
+async def analitica_historica(zona: str):
+    with closing(conectar()) as conn:
+        return consulta_sector(conn, zona)
+
+
+# 8. Mensaje escrito al bot (lo que no es saludo, ubicacion ni respuesta de sector). El modelo extrae el sector
+#    y sugiere la intencion; aqui se decide: consulta -> resumen; "se fue la luz en X" / "volvio la luz en X" ->
+#    reporte en el centro de la celda mas votada de X, si X ya es un sector conocido. Si no, se pide la ubicacion.
+@app.post("/api/reportar/texto")
+async def reportar_texto(data: ReporteTexto):
+    intencion = intencion_de(data.texto, data.intencion)
+    telefono = normalizar_telefono(data.telefono)
+    with closing(conectar()) as conn, conn:
+        if intencion == "consulta" or not telefono:
+            return {"tipo": "consulta", **consulta_sector(conn, data.zona or data.texto)}
+        sector = resolver_sector(conn, data.zona)
+        if sector["metodo"] == "ambiguo":
+            return {"tipo": "pregunta", "sector": sector, "mensaje": pregunta_ambigua(sector)}
+        fila = conn.execute("SELECT celda FROM alias WHERE nombre = ? ORDER BY votos DESC LIMIT 1",
+                            (sector["nombre"],)).fetchone() if sector["metodo"] != "desconocido" else None
+        if not fila:
+            nombre = (sector["escrito"] or "tu sector").upper()
+            return {"tipo": "falta_ubicacion", "sector": sector, "mensaje": (
+                f"📍 Todavía no tengo *{nombre}* en el mapa. Envía tu ubicación con el botón 📍 y luego escribe "
+                f"el nombre de tu sector: así queda tu reporte y el sector aprende dónde está.")}
+        controlar_frecuencia(conn, telefono)
+        tiene_luz = 1 if intencion == "volvio" else 0
+        lat, lon = centro_celda(fila["celda"])
+        # origen 'texto': ubicacion aproximada (centro de la celda); no vota como nombre popular
+        conn.execute("""
+            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen, celda)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'texto', ?)
+        """, (telefono, lat, lon, sector["nombre"], sector["nombre"], tiene_luz, texto_hora(), fila["celda"]))
+    nombre = sector["nombre"].upper()
+    lineas = [f"✅ Anotado: *volvió la luz* en *{nombre}*. ¡Gracias por avisar!" if tiene_luz
+              else f"✅ Anotado: *sin luz* en *{nombre}*."]
+    nota = nota_entendido(sector)
+    if nota:
+        lineas.append(nota)
+    if not tiene_luz:
+        lineas.append("Para más precisión en el mapa, envía tu ubicación con el botón 📍.")
+    lineas.append("Mapa en vivo: https://radar.brecha-cero.com/mapa")
+    return {"tipo": "reporte", "sector": sector, "tiene_luz": tiene_luz, "mensaje": "\n".join(lineas)}
 
 
 # ---------- Mapa ---------------------------------------------------------------------

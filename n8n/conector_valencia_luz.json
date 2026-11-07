@@ -174,7 +174,7 @@
             {
               "id": "dce7d744-954a-5c27-a079-597315b252df",
               "name": "mensaje",
-              "value": "📡 *Radar* · cortes de luz reportados por los vecinos, en vivo.\n\n• *Reportar un corte:* envía tu ubicación 📍 (en Telegram, con el botón de abajo) y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://radar.brecha-cero.com/mapa",
+              "value": "📡 *Radar* · cortes de luz reportados por los vecinos, en vivo.\n\n• *Reportar un corte:* envía tu ubicación 📍 (en Telegram, con el botón de abajo) y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n• También puedes escribir: *se fue la luz en Prebo* o *ya volvió la luz en Prebo*.\n\nMapa en vivo: https://radar.brecha-cero.com/mapa",
               "type": "string"
             }
           ]
@@ -338,7 +338,7 @@
         "promptType": "define",
         "text": "={{ $('Leer mensaje').item.json.texto }}",
         "options": {
-          "systemMessage": "Lees mensajes de WhatsApp de vecinos de Venezuela que preguntan por la luz. Extrae SOLO el nombre del sector, urbanización, parroquia o municipio que menciona el mensaje, tal como lo escribió (sin agregar palabras). Si no menciona ninguno, devuelve zona vacía. No respondas la pregunta ni inventes lugares.",
+          "systemMessage": "Lees mensajes de vecinos de Venezuela sobre la luz (cortes de electricidad). 1) zona: SOLO el nombre del sector, urbanización, parroquia o municipio que menciona el mensaje, tal como lo escribió (sin agregar palabras); vacía si no menciona ninguno. 2) intencion: 'sin_luz' si el vecino AVISA que se fue la luz donde está; 'volvio' si AVISA que volvió; 'consulta' si pregunta o pide información. Ante la duda, 'consulta'. No respondas la pregunta ni inventes lugares.",
           "maxIterations": 1
         }
       },
@@ -362,12 +362,12 @@
         "builtInTools": {},
         "options": {
           "temperature": 0,
-          "maxTokens": 60,
+          "maxTokens": 80,
           "textFormat": {
             "textOptions": {
               "type": "json_schema",
               "name": "zona",
-              "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"zona\": {\n      \"type\": \"string\",\n      \"description\": \"Nombre del sector mencionado, o cadena vacía si no hay ninguno.\"\n    }\n  },\n  \"required\": [\n    \"zona\"\n  ],\n  \"additionalProperties\": false\n}",
+              "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"zona\": {\n      \"type\": \"string\",\n      \"description\": \"Nombre del sector mencionado, o cadena vacía si no hay ninguno.\"\n    },\n    \"intencion\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"consulta\",\n        \"sin_luz\",\n        \"volvio\"\n      ],\n      \"description\": \"Si el vecino avisa un corte, avisa que volvió, o pregunta.\"\n    }\n  },\n  \"required\": [\n    \"zona\",\n    \"intencion\"\n  ],\n  \"additionalProperties\": false\n}",
               "description": "Sector mencionado en el mensaje"
             }
           }
@@ -390,7 +390,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Salida del modelo: {\"zona\": \"...\"} como texto u objeto. Si no se puede leer, zona vacía.\nlet out = $input.first().json.output;\nif (typeof out === 'string') {\n  const m = out.match(/\\{[\\s\\S]*\\}/);\n  try { out = JSON.parse(m ? m[0] : out); } catch (e) { out = {}; }\n}\nconst zona = String((out && out.zona) || '').trim().slice(0, 60);\nreturn [{ json: { zona } }];\n"
+        "jsCode": "// Salida del modelo: {\"zona\": \"...\", \"intencion\": \"...\"} como texto u objeto. Si no se puede leer, vacio.\nlet out = $input.first().json.output;\nif (typeof out === 'string') {\n  const m = out.match(/\\{[\\s\\S]*\\}/);\n  try { out = JSON.parse(m ? m[0] : out); } catch (e) { out = {}; }\n}\nconst zona = String((out && out.zona) || '').trim().slice(0, 60);\nconst intencion = ['consulta', 'sin_luz', 'volvio'].includes(out && out.intencion) ? out.intencion : 'consulta';\nreturn [{ json: { zona, intencion } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -436,8 +436,8 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "http://luz_backend_python:8000/api/analitica/historico",
+        "method": "POST",
+        "url": "http://luz_backend_python:8000/api/reportar/texto",
         "options": {
           "timeout": 10000,
           "response": {
@@ -447,15 +447,9 @@
             }
           }
         },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "zona",
-              "value": "={{ $json.zona }}"
-            }
-          ]
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Leer mensaje').item.json.telefono, texto: $('Leer mensaje').item.json.texto, zona: $json.zona, intencion: $json.intencion }) }}"
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -464,7 +458,7 @@
         580
       ],
       "id": "a3f7f6f0-4857-5932-a0e7-e1a8fa71f985",
-      "name": "Resumen del sector"
+      "name": "Consulta o reporte"
     },
     {
       "parameters": {
@@ -473,7 +467,7 @@
             {
               "id": "939460ad-ea65-54f2-8cef-6de3125e8638",
               "name": "mensaje",
-              "value": "={{ $json.statusCode === 200 ? $json.body.mensaje : \"⚠️ No pudimos consultar ese sector en este momento. Intenta de nuevo en unos minutos.\" }}",
+              "value": "={{ $json.statusCode === 200 ? $json.body.mensaje : $json.statusCode === 429 ? \"⏳ Ya recibimos varios reportes desde este número en la última hora. Intenta de nuevo más tarde.\" : \"⚠️ No pudimos consultar ese sector en este momento. Intenta de nuevo en unos minutos.\" }}",
               "type": "string"
             }
           ]
@@ -496,7 +490,7 @@
             {
               "id": "7ad2f539-524c-5b1c-9475-4b18ce0e72cd",
               "name": "mensaje",
-              "value": "No identifiqué el sector en tu mensaje. Escribe solo su nombre (ej.: *Prebo*, *Tocuyito*) o envía tu ubicación 📍 para reportar un corte.",
+              "value": "No identifiqué el sector en tu mensaje. Escribe su nombre (ej.: *Prebo*, *se fue la luz en Prebo*) o envía tu ubicación 📍 para reportar un corte.",
               "type": "string"
             }
           ]
@@ -671,7 +665,7 @@
       "main": [
         [
           {
-            "node": "Resumen del sector",
+            "node": "Consulta o reporte",
             "type": "main",
             "index": 0
           }
@@ -685,7 +679,7 @@
         ]
       ]
     },
-    "Resumen del sector": {
+    "Consulta o reporte": {
       "main": [
         [
           {
