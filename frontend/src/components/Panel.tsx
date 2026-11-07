@@ -52,7 +52,7 @@ export function Panel(props: Props) {
         </button>
         {telegram && (
           <a className="btn btn-tg" href={`https://t.me/${telegram}`} target="_blank" rel="noopener noreferrer">
-            💬 Reportar por Telegram (gratis)
+            💬 Reportar por Telegram
           </a>
         )}
         {whatsapp && (
