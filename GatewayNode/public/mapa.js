@@ -1,4 +1,4 @@
-// Mapa de Valencia Luz: dibuja los reportes recientes y permite reportar desde el navegador.
+// Mapa de Radar: dibuja los reportes recientes y permite reportar desde el navegador.
 (function () {
   'use strict';
   const CENTRO = [10.165, -68.021];

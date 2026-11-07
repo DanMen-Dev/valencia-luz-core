@@ -28,7 +28,7 @@
           },
           "conditions": [
             {
-              "id": "e7249af6-7b0e-4c25-b6b3-6a46274e0a92",
+              "id": "edd6a702-d51b-58fb-a435-eb91c0dd6f66",
               "leftValue": "={{ $json.body.message_type }}",
               "rightValue": "incoming",
               "operator": {
@@ -47,7 +47,7 @@
         -380,
         0
       ],
-      "id": "9a3bcac6-d9c0-4385-abc8-b596db2a170f",
+      "id": "8ff17033-26af-53bb-ab8f-5c827c0be3c1",
       "name": "If"
     },
     {
@@ -67,7 +67,7 @@
         -160,
         0
       ],
-      "id": "449d9b1a-9369-4469-b1fb-532844f87170",
+      "id": "7b36a470-a215-58d0-bcd5-74e4754d245a",
       "name": "Conector"
     },
     {
@@ -81,7 +81,7 @@
           },
           "conditions": [
             {
-              "id": "69777514-04cb-4dee-91c2-f5d96aa307b2",
+              "id": "eb32d78f-03ad-5c1f-9517-e3775b4309ca",
               "leftValue": "={{ $json.mensaje_confirmacion }}",
               "operator": {
                 "type": "string",
@@ -100,7 +100,7 @@
         60,
         0
       ],
-      "id": "7d6d1fb4-23c6-4460-8686-a3c8ad93605b",
+      "id": "004e62e6-9b5b-5e31-96f1-2ed5ce25ca72",
       "name": "¿Hay respuesta?"
     },
     {
@@ -120,7 +120,7 @@
         280,
         -20
       ],
-      "id": "c8225e3e-9684-43cc-a0e2-7d28fe83c54c",
+      "id": "818ee146-fe0c-527d-b554-0ddebd309e20",
       "name": "Responder en Chatwoot"
     }
   ],

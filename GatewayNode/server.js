@@ -1,4 +1,4 @@
-// Gateway del mapa de Valencia Luz: sirve la pagina del mapa y hace de puente hacia el backend de Python.
+// Gateway del mapa de Radar: sirve la pagina del mapa y hace de puente hacia el backend de Python.
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
@@ -37,7 +37,7 @@ app.use('/recursos', express.static(path.join(__dirname, 'public'), { maxAge: '5
 
 app.get('/', (req, res) => res.redirect('/mapa'));
 app.get('/mapa', (req, res) => res.sendFile(path.join(__dirname, 'public', 'mapa.html')));
-app.get('/salud', (req, res) => res.json({ status: 'online', modulo: 'Gateway del mapa de Valencia Luz' }));
+app.get('/salud', (req, res) => res.json({ status: 'online', modulo: 'Gateway del mapa de Radar' }));
 
 app.get('/api/v1/config', (req, res) => res.json({ whatsapp: WHATSAPP }));
 
@@ -87,4 +87,4 @@ app.post('/api/v1/reportar', async (req, res) => {
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
-app.listen(PORT, () => console.log(`[GATEWAY] Mapa de Valencia Luz en el puerto ${PORT}`));
+app.listen(PORT, () => console.log(`[GATEWAY] Mapa de Radar en el puerto ${PORT}`));

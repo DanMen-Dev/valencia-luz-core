@@ -28,7 +28,7 @@
         -980,
         300
       ],
-      "id": "f265b031-cf2f-4b2c-8099-5408939cc1cc",
+      "id": "e1f1f17f-74a0-5ea0-8898-7990684a8755",
       "name": "Leer mensaje"
     },
     {
@@ -45,7 +45,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "32da4e07-0ef2-4883-99be-fff7168c1251",
+                    "id": "94dc8913-acca-5c0e-bac7-33f46c708f1f",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "ignorar",
                     "operator": {
@@ -69,7 +69,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "67ebcc48-f1d7-4bb9-8ee7-9375361d1239",
+                    "id": "7aa2eb82-b9d1-560e-8628-e4ee2c83a83a",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "bienvenida",
                     "operator": {
@@ -93,7 +93,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "922c1222-1ce2-4009-8844-4fa7270dab78",
+                    "id": "2d745101-84e5-58b6-8d4f-b02cd018f829",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "ubicacion",
                     "operator": {
@@ -117,7 +117,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "57f99c44-3722-4a31-b5d5-c7fc7c427e00",
+                    "id": "9257cab9-264a-5d69-9889-574a36f128c5",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "texto",
                     "operator": {
@@ -141,7 +141,7 @@
         -760,
         300
       ],
-      "id": "e289db46-aef1-4fc7-899c-d2e0dd1b4e0c",
+      "id": "833cc455-a55e-5988-b9c3-f4d324906e9c",
       "name": "Ruta"
     },
     {
@@ -149,7 +149,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "47841994-efaf-47b2-8803-32e5f17efee8",
+              "id": "6cc7f42d-4aa1-5cf8-b21f-8d2143f98a0b",
               "name": "mensaje",
               "value": "",
               "type": "string"
@@ -164,7 +164,7 @@
         -500,
         -60
       ],
-      "id": "687246d5-f822-4835-b58c-080d410723ca",
+      "id": "0dce3cc5-ad09-5351-b816-5352201b746b",
       "name": "Sin respuesta"
     },
     {
@@ -172,9 +172,9 @@
         "assignments": {
           "assignments": [
             {
-              "id": "4ece1714-c131-4385-96cd-cf17a7124810",
+              "id": "dce7d744-954a-5c27-a079-597315b252df",
               "name": "mensaje",
-              "value": "💡 *Valencia Luz* · reportes de luz en Carabobo hechos por los vecinos.\n\n• *Reportar un corte:* envía tu ubicación 📍 y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://luz.brecha-cero.com/mapa",
+              "value": "📡 *Radar* · cortes de luz reportados por los vecinos, en vivo.\n\n• *Reportar un corte:* envía tu ubicación 📍 y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://luz.brecha-cero.com/mapa",
               "type": "string"
             }
           ]
@@ -187,7 +187,7 @@
         -500,
         100
       ],
-      "id": "ad0433ca-bfab-4593-bc33-1faa1a398513",
+      "id": "4a3bb827-d86d-5235-889f-916af723ff71",
       "name": "Bienvenida"
     },
     {
@@ -213,7 +213,7 @@
         -500,
         260
       ],
-      "id": "34d06902-c951-45ca-8609-579344df0b7c",
+      "id": "8905c347-d00f-54b7-a22b-fb247e010892",
       "name": "Guardar ubicación"
     },
     {
@@ -226,7 +226,7 @@
         -280,
         260
       ],
-      "id": "7a508961-b6b9-46d9-83f0-53dd09349713",
+      "id": "c8f94040-8044-5054-8d3b-75a4ad20a05c",
       "name": "Mensaje ubicación"
     },
     {
@@ -258,7 +258,7 @@
         -500,
         520
       ],
-      "id": "36f33f1d-5efa-4ade-9e36-f21206ee33ca",
+      "id": "ea63959c-9595-58a3-a43e-1e55e3040733",
       "name": "¿Espera sector?"
     },
     {
@@ -272,7 +272,7 @@
           },
           "conditions": [
             {
-              "id": "f134bfab-a498-4600-9158-07dafc93bc2a",
+              "id": "188b7afe-6c8a-5cd2-8fbd-b01d9c91f21a",
               "leftValue": "={{ $json.body.estado }}",
               "rightValue": "esperando",
               "operator": {
@@ -291,7 +291,7 @@
         -280,
         520
       ],
-      "id": "938ab388-8883-4614-8d70-d3cccd809952",
+      "id": "c2446322-0bc5-53f4-be72-e25df7fd2645",
       "name": "¿Esperando?"
     },
     {
@@ -317,7 +317,7 @@
         -40,
         420
       ],
-      "id": "28ebb92b-5976-4618-b7b7-f520458a2d6b",
+      "id": "d3ed7ac3-9845-57a9-b027-c52dbc64ada6",
       "name": "Guardar sector"
     },
     {
@@ -330,7 +330,7 @@
         180,
         420
       ],
-      "id": "9fec2194-077e-4110-b2d4-7d6818783b46",
+      "id": "396190ad-c9ae-5b3f-9a8a-8d5a8075d718",
       "name": "Mensaje sector"
     },
     {
@@ -338,7 +338,7 @@
         "promptType": "define",
         "text": "={{ $('Leer mensaje').item.json.texto }}",
         "options": {
-          "systemMessage": "Lees mensajes de WhatsApp de vecinos de Carabobo, Venezuela, que preguntan por la luz. Extrae SOLO el nombre del sector, urbanización, parroquia o municipio que menciona el mensaje, tal como lo escribió (sin agregar palabras). Si no menciona ninguno, devuelve zona vacía. No respondas la pregunta ni inventes lugares.",
+          "systemMessage": "Lees mensajes de WhatsApp de vecinos de Venezuela que preguntan por la luz. Extrae SOLO el nombre del sector, urbanización, parroquia o municipio que menciona el mensaje, tal como lo escribió (sin agregar palabras). Si no menciona ninguno, devuelve zona vacía. No respondas la pregunta ni inventes lugares.",
           "maxIterations": 1
         }
       },
@@ -348,7 +348,7 @@
         -40,
         660
       ],
-      "id": "33582192-4c6c-43c0-b3c8-417f8762772a",
+      "id": "6d03099a-cfd3-52d3-8e46-4636175cc410",
       "name": "Extraer zona (único modelo)"
     },
     {
@@ -398,7 +398,7 @@
         300,
         660
       ],
-      "id": "918e0576-83a6-4ead-93d3-60249a541ff0",
+      "id": "48d87b8d-e15c-5a59-a964-138a5d944502",
       "name": "Leer zona"
     },
     {
@@ -412,7 +412,7 @@
           },
           "conditions": [
             {
-              "id": "818c11ae-e82d-471d-a4cd-c3889707759e",
+              "id": "24e23d47-79c2-5933-b35e-0ec17fa5dd96",
               "leftValue": "={{ $json.zona }}",
               "operator": {
                 "type": "string",
@@ -431,7 +431,7 @@
         520,
         660
       ],
-      "id": "fbbca80c-c0a8-4200-b94b-d8d83e7c61fb",
+      "id": "63c1dec5-7f6f-5e0a-8a88-ce29f32f984d",
       "name": "¿Hay zona?"
     },
     {
@@ -463,7 +463,7 @@
         740,
         580
       ],
-      "id": "083539c1-2970-4e07-bdf8-5e7d5df8a820",
+      "id": "a3f7f6f0-4857-5932-a0e7-e1a8fa71f985",
       "name": "Resumen del sector"
     },
     {
@@ -471,7 +471,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "5828cfd7-1820-4cc4-b82a-5149615b9adf",
+              "id": "939460ad-ea65-54f2-8cef-6de3125e8638",
               "name": "mensaje",
               "value": "={{ $json.statusCode === 200 ? $json.body.mensaje : \"⚠️ No pudimos consultar ese sector en este momento. Intenta de nuevo en unos minutos.\" }}",
               "type": "string"
@@ -486,7 +486,7 @@
         960,
         580
       ],
-      "id": "3f49d100-3883-4e66-ac5f-ed9e9a84d64b",
+      "id": "3e6fe09c-780d-51d8-b5fa-3554b58eac85",
       "name": "Mensaje del sector"
     },
     {
@@ -494,7 +494,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "cc72fd2a-23cb-41cd-804c-e13264a7ec28",
+              "id": "7ad2f539-524c-5b1c-9475-4b18ce0e72cd",
               "name": "mensaje",
               "value": "No identifiqué el sector en tu mensaje. Escribe solo su nombre (ej.: *Prebo*, *Tocuyito*) o envía tu ubicación 📍 para reportar un corte.",
               "type": "string"
@@ -509,7 +509,7 @@
         740,
         780
       ],
-      "id": "2bc19e78-0436-48c5-ae5b-e3b3459db876",
+      "id": "b729b841-2bdc-5e91-9202-1a09ba076562",
       "name": "Pedir sector"
     },
     {

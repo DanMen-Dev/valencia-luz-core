@@ -1,5 +1,5 @@
 """
-Valencia Luz Core: backend de reportes comunitarios de cortes de luz.
+Radar: backend de reportes comunitarios de cortes de luz.
 
 Recibe reportes por WhatsApp (via n8n) y por la web (via el gateway del mapa), los guarda en SQLite
 y responde solo con datos reales: si no hay reportes suficientes, lo dice en vez de inventar horas.
@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
 app = FastAPI(
-    title="Valencia Luz Core",
+    title="Radar - cortes de luz",
     description="Reportes comunitarios de cortes de luz: registro, mapa y estadisticas por zona.",
 )
 
@@ -334,10 +334,10 @@ def mensaje_zona(r):
     """El texto para WhatsApp, armado solo con datos reales."""
     nombre = r["zona"].upper()
     if r["reportes_7_dias"] == 0:
-        return (f"💡 *Valencia Luz*: todavía no hay reportes de *{nombre}* en los últimos 7 días.\n"
+        return (f"📡 *Radar*: todavía no hay reportes de *{nombre}* en los últimos 7 días.\n"
                 "Si estás ahí, envía tu ubicación 📍 para que tu sector aparezca en el mapa: "
                 "https://luz.brecha-cero.com/mapa")
-    lineas = [f"💡 *Valencia Luz · {nombre}*"]
+    lineas = [f"📡 *Radar · {nombre}*"]
     if r["estado"] == "sin_luz":
         lineas.append(f"• Ahora: *sin luz* según los reportes (desde las {r['inicio_corte_hoy']})."
                       if r["inicio_corte_hoy"] else "• Ahora: *sin luz* según los reportes.")
