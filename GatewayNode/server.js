@@ -124,6 +124,55 @@ app.post('/api/v1/confirmar', async (req, res) => {
   }
 });
 
+// ---------- Contador de usuarios ----------
+// Visita diaria del mapa (numero al azar del navegador). Tope propio por IP para que nadie infle el contador.
+const visitasPorIp = new Map();
+app.post('/api/v1/visita', async (req, res) => {
+  const visitante = String(req.body?.visitante ?? '');
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(visitante)) return res.status(400).json({ error: 'Visitante invalido.' });
+  const ahora = Date.now();
+  const recientes = (visitasPorIp.get(req.ip) || []).filter(t => ahora - t < 3600e3);
+  if (recientes.length >= 20) return res.status(429).json({ error: 'Demasiadas visitas.' });
+  visitasPorIp.set(req.ip, [...recientes, ahora]);
+  if (visitasPorIp.size > 5000) visitasPorIp.clear();
+  try {
+    await axios.post(`${BACKEND}/api/visita`, { visitante }, { timeout: 5000 });
+    res.status(204).end();
+  } catch {
+    res.status(204).end();   // contar es secundario: nunca molesta al visitante
+  }
+});
+
+// Contador publico (total del mes, o null hasta llegar al minimo). Se guarda 5 minutos.
+let contadorGuardado = { valor: { mes: null }, hasta: 0 };
+app.get('/api/v1/contador', async (req, res) => {
+  if (Date.now() > contadorGuardado.hasta) {
+    try {
+      const r = await axios.get(`${BACKEND}/api/contador`, { timeout: 5000 });
+      contadorGuardado = { valor: r.data, hasta: Date.now() + 5 * 60e3 };
+    } catch {
+      contadorGuardado.hasta = Date.now() + 60e3;
+    }
+  }
+  res.set('Cache-Control', 'no-store').json(contadorGuardado.valor);
+});
+
+// Panel privado: la clave viaja en una cabecera (no en la URL, para que no quede en registros)
+app.get('/api/v1/estadisticas', async (req, res) => {
+  try {
+    const r = await axios.get(`${BACKEND}/api/estadisticas`, {
+      timeout: 8000, validateStatus: () => true,
+      headers: { 'X-Radar-Clave': String(req.get('X-Radar-Clave') || '') },
+    });
+    res.status(r.status).set('Cache-Control', 'no-store').json(r.data);
+  } catch {
+    res.status(502).json({ error: 'No se pudo conectar con el backend.' });
+  }
+});
+app.use('/estadisticas', express.static(path.join(__dirname, 'admin'), {
+  setHeaders: res => res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' }),
+}));
+
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
 app.listen(PORT, () => console.log(`[GATEWAY] Mapa de Radar en el puerto ${PORT}`));

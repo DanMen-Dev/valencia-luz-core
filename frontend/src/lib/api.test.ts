@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { confirmarSector, enVenezuela, enviarReporte, obtenerConfig, obtenerReportes } from './api';
+import { confirmarSector, enVenezuela, enviarReporte, obtenerConfig, obtenerContador, obtenerReportes } from './api';
 import { reporte, respuesta } from '../test/datos';
 
 describe('enVenezuela', () => {
@@ -77,5 +77,16 @@ describe('obtenerConfig', () => {
     expect((await obtenerConfig()).horas).toBe(6);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({}, 502)));
     expect(await obtenerConfig()).toEqual({ whatsapp: '', telegram: '', horas: 6 });
+  });
+});
+
+describe('obtenerContador', () => {
+  it('devuelve el total del mes o null mientras sean pocos', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ mes: 312 })));
+    expect(await obtenerContador()).toBe(312);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ mes: null })));
+    expect(await obtenerContador()).toBeNull();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('sin red')));
+    expect(await obtenerContador()).toBeNull();
   });
 });

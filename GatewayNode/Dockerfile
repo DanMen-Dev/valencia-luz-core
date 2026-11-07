@@ -14,6 +14,7 @@ WORKDIR /app
 COPY GatewayNode/package*.json ./
 RUN npm ci --omit=dev
 COPY GatewayNode/server.js .
+COPY GatewayNode/admin ./admin
 COPY --from=frontend /frontend/dist ./public
 
 EXPOSE 5000

@@ -14,6 +14,8 @@ function rutas(reportar: Response) {
     if (url === '/api/v1/config') return Promise.resolve(respuesta({ whatsapp: '', horas: 4 }));
     if (url === '/api/v1/mapa/circuitos') return Promise.resolve(respuesta([]));
     if (url === '/api/v1/reportar') return Promise.resolve(reportar);
+    if (url === '/api/v1/visita') return Promise.resolve(new Response(null, { status: 204 }));
+    if (url === '/api/v1/contador') return Promise.resolve(respuesta({ mes: null }));
     return Promise.reject(new Error('ruta inesperada ' + url));
   });
 }

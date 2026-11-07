@@ -3,7 +3,8 @@ import { MapaReportes, type Foco } from './components/MapaReportes';
 import { Panel } from './components/Panel';
 import { useReportes } from './hooks/useReportes';
 import { useInstalar } from './hooks/useInstalar';
-import { HORAS_POR_DEFECTO, confirmarSector, enVenezuela, enviarReporte, obtenerConfig, ubicacionActual } from './lib/api';
+import { HORAS_POR_DEFECTO, confirmarSector, enVenezuela, enviarReporte, obtenerConfig, obtenerContador, ubicacionActual } from './lib/api';
+import { avisarVisita } from './lib/visita';
 import type { Grupo } from './lib/agrupar';
 import type { Aviso } from './types';
 
@@ -20,12 +21,15 @@ export default function App() {
   const [whatsapp, setWhatsapp] = useState('');
   const [telegram, setTelegram] = useState('');
   const [horas, setHoras] = useState(HORAS_POR_DEFECTO);
+  const [contador, setContador] = useState<number | null>(null);
   const [aviso, setAviso] = useState<Aviso>(null);
   const [enviando, setEnviando] = useState(false);
   const [foco, setFoco] = useState<Foco | null>(focoInicial);
 
   useEffect(() => {
     obtenerConfig().then(c => { setWhatsapp(c.whatsapp); setTelegram(c.telegram); setHoras(c.horas); }).catch(() => {});
+    void avisarVisita();
+    obtenerContador().then(setContador).catch(() => {});
   }, []);
 
   async function reportar(tieneLuz: 0 | 1) {
@@ -58,7 +62,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Panel {...estado} whatsapp={whatsapp} telegram={telegram} horas={horas} puedeInstalar={puedeInstalar} ayudaInstalar={ayuda} onInstalar={() => void instalar()} aviso={aviso} enviando={enviando} onReportar={reportar} />
+      <Panel {...estado} contador={contador} whatsapp={whatsapp} telegram={telegram} horas={horas} puedeInstalar={puedeInstalar} ayudaInstalar={ayuda} onInstalar={() => void instalar()} aviso={aviso} enviando={enviando} onReportar={reportar} />
       <main className="contenedor-mapa">
         <MapaReportes reportes={estado.reportes} foco={foco} onConfirmar={confirmar} />
       </main>

@@ -550,5 +550,44 @@ def test_recalcular_cortes_es_idempotente(app_mod, cuatro_semanas):
     assert [tuple(f) for f in filas] == [("medido", 8, 4.0)]
 
 
+# ---------- Contador de usuarios
+
+def test_el_contador_no_guarda_datos_personales(app_mod, cliente):
+    for v in ["visitante-aaaa-1", "visitante-aaaa-1", "visitante-bbbb-2"]:
+        assert cliente.post("/api/visita", json={"visitante": v}).status_code == 200
+    cliente.get("/api/usuario/esperando-nombre", params={"telefono": "584141112233"})
+    gps(cliente, tel="584149990000")
+    with sqlite3.connect(app_mod.DB_PATH) as c:
+        filas = c.execute("SELECT canal, quien FROM actividad").fetchall()
+    assert sorted(canal for canal, _ in filas) == ["bot", "bot", "mapa", "mapa"]   # 2 visitantes, 2 del bot
+    guardado = " ".join(q for _, q in filas)
+    assert "584141112233" not in guardado and "visitante" not in guardado        # solo huellas
+
+
+def test_visitante_invalido(cliente):
+    assert cliente.post("/api/visita", json={"visitante": "<script>"}).status_code == 422
+
+
+def test_el_contador_publico_aparece_desde_el_minimo(app_mod, cliente):
+    app_mod.CONTADOR_MINIMO = 3
+    for i in range(2):
+        cliente.post("/api/visita", json={"visitante": f"visitante-{i:04d}"})
+    assert cliente.get("/api/contador").json() == {"mes": None}
+    cliente.get("/api/usuario/esperando-nombre", params={"telefono": "584141112233"})
+    assert cliente.get("/api/contador").json() == {"mes": 3}
+
+
+def test_el_panel_privado_pide_la_clave(app_mod, cliente):
+    assert cliente.get("/api/estadisticas").status_code == 404           # sin VL_CLAVE_ESTADISTICAS: no existe
+    app_mod.CLAVE_ESTADISTICAS = "clave-de-prueba"
+    assert cliente.get("/api/estadisticas", headers={"X-Radar-Clave": "otra"}).status_code == 403
+    cliente.post("/api/visita", json={"visitante": "visitante-0001"})
+    nombrar(cliente, "58414001", "Prebo")
+    e = cliente.get("/api/estadisticas", headers={"X-Radar-Clave": "clave-de-prueba"}).json()
+    assert e["hoy"] == {"mapa": 1, "bot": 1, "vecinos_que_reportaron": 1, "reportes": 1, "total": 2}
+    assert e["sectores_mas_activos"] == [{"sector": "prebo", "reportes": 1}]
+    assert e["por_dia"][-1]["mapa"] == 1 and e["por_dia"][-1]["bot"] == 1
+
+
 def test_salud(cliente):
     assert cliente.get("/api/salud").json()["status"] == "ok"

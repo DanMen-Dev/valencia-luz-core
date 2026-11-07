@@ -11,6 +11,7 @@ interface Props {
   ayudaInstalar?: 'ios' | 'android' | null;
   whatsapp: string;
   telegram?: string;
+  contador?: number | null;
   horas: number;
   aviso: Aviso;
   enviando: boolean;
@@ -102,6 +103,9 @@ export function Panel(props: Props) {
         <p className="nota">Un corte sin noticias sale del mapa a las {props.horas} h: se asume que volvió.</p>
         <p className="estado">{resumen(props)}</p>
       </section>
+      {props.contador != null && (
+        <p className="contador">👥 {props.contador.toLocaleString('es-VE')} vecinos usaron Radar este mes</p>
+      )}
     </aside>
   );
 }

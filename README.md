@@ -13,10 +13,10 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Parte | Estado |
 |---|---|
 | Mapa web y reporte desde el navegador | En producción |
-| Backend (API, estimaciones, respaldo diario) | En producción, 89 pruebas automáticas |
+| Backend (API, estimaciones, respaldo diario) | En producción, 93 pruebas automáticas |
 | Bot de Telegram [@RadarCortesBot](https://t.me/RadarCortesBot) (n8n) | En producción, gratis |
 | Canal de WhatsApp (n8n + Chatwoot) | Listo, sin número conectado: los mensajes del bot se cobran por mensaje |
-| Frontend en React + TypeScript (Vite) | En producción, 50 pruebas con Vitest y Testing Library |
+| Frontend en React + TypeScript (Vite) | En producción, 57 pruebas con Vitest y Testing Library |
 | App instalable (PWA) y mapa sin conexión | En producción |
 
 No es información oficial de Corpoelec: todo sale de lo que reportan los vecinos.
@@ -92,6 +92,10 @@ Durante un apagón muchas veces cae también la señal de datos, así que Radar 
 
 El fondo del mapa es **OpenFreeMap**, estilo *Liberty* (mapas vectoriales a color con datos de OpenStreetMap, gratis, sin clave ni límite de vistas), dibujado con MapLibre debajo de las capas de Leaflet. MapLibre pesa unos 300 KB comprimido, así que se carga aparte: la app y los círculos aparecen primero sobre las imágenes de OpenStreetMap, y el fondo vectorial las reemplaza cuando termina de dibujarse. Si el teléfono no tiene WebGL o OpenFreeMap falla, se quedan las imágenes de OpenStreetMap. Se descartó MapTiler porque su plan gratis se pausa al pasar 5.000 sesiones al mes, justo lo que pasaría en un apagón grande.
 
+### Contador de vecinos, sin datos personales
+
+Radar cuenta vecinos únicos por día, semana y mes sin guardar nada que identifique a nadie: el mapa genera un número al azar en el navegador y avisa una vez al día; el bot guarda una huella cifrada (HMAC) del teléfono o del id de Telegram, nunca el número. El total del mes se muestra discreto al pie del panel cuando pasa de 50; el detalle (por canal, quiénes vuelven, sectores más activos) está en un panel privado en `/estadisticas`, protegido con una clave que viaja en una cabecera, no en la URL.
+
 ## Decisiones y lecciones
 
 - **La base de datos vivía dentro del contenedor.** Un `docker compose up --build` la habría borrado, y el respaldo nocturno apuntaba a un archivo que no existía. Ahora vive en `./datos` (volumen) y el respaldo usa la API de backup de SQLite.
@@ -156,6 +160,8 @@ bash n8n/probar_conector.sh
 
 | Variable | Para qué | Por defecto |
 |---|---|---|
+| `VL_CLAVE_ESTADISTICAS` | Clave del panel privado `/estadisticas`; vacía lo desactiva | vacía |
+| `VL_CONTADOR_MINIMO` | El contador "vecinos este mes" del mapa aparece desde este número | 50 |
 | `VL_TELEGRAM` | Usuario del bot de Telegram para el botón del mapa (sin @) | `RadarCortesBot` |
 | `VL_WHATSAPP` | Número del bot para el botón del mapa (solo dígitos); vacío lo oculta | vacío |
 | `VL_DB_PATH` | Ruta de la base SQLite | `/app/datos/valencia_luz_persistente.db` |

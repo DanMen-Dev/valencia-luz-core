@@ -11,6 +11,8 @@ services:
     environment:
       - TZ=America/Caracas
       - VL_HORAS_CORTE=${VL_HORAS_CORTE:-6}   # un corte sin noticias vence a las 6 h (en .env)
+      - VL_CLAVE_ESTADISTICAS=${VL_CLAVE_ESTADISTICAS:-}   # clave del panel privado /estadisticas (en .env)
+      - VL_CONTADOR_MINIMO=${VL_CONTADOR_MINIMO:-50}       # el contador del mapa aparece desde este numero
     restart: always
 
   orquestador-node:

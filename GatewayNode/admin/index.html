@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Radar · Estadísticas</title>
+  <style>
+    :root { --fondo: #121212; --caja: #1d1d1d; --borde: #2c2c2c; --texto: #f2f2f2; --suave: #9a9a9a; --acento: #ff9800; --tg: #229ed9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--fondo); color: var(--texto); font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { margin: 0 0 4px; color: var(--acento); font-size: 22px; }
+    h2 { font-size: 15px; margin: 28px 0 10px; color: var(--suave); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .sub { color: var(--suave); margin: 0 0 20px; font-size: 13px; }
+    form { display: flex; gap: 8px; flex-wrap: wrap; margin: 24px 0; }
+    input { flex: 1; min-width: 200px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--borde); background: var(--caja); color: var(--texto); font: inherit; }
+    button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--acento); color: #121212; font: inherit; font-weight: 700; cursor: pointer; }
+    .error { color: #ff8a80; }
+    .tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .tarjeta { background: var(--caja); border: 1px solid var(--borde); border-radius: 10px; padding: 14px 16px; }
+    .tarjeta .titulo { color: var(--suave); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .tarjeta .numero { font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .tarjeta .detalle { color: var(--suave); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; background: var(--caja); border-radius: 10px; overflow: hidden; }
+    th, td { padding: 8px 12px; border-bottom: 1px solid var(--borde); text-align: left; font-variant-numeric: tabular-nums; }
+    th { color: var(--suave); font-weight: 600; font-size: 12px; }
+    th.n, td.n { text-align: right; }
+    .barras { display: flex; align-items: flex-end; gap: 3px; height: 120px; background: var(--caja); border: 1px solid var(--borde); border-radius: 10px; padding: 12px; }
+    .barra { flex: 1; display: flex; flex-direction: column-reverse; min-width: 4px; }
+    .barra .m { background: var(--acento); border-radius: 2px 2px 0 0; }
+    .barra .b { background: var(--tg); }
+    .leyenda { color: var(--suave); font-size: 12px; margin-top: 6px; }
+    .leyenda span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: -1px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Radar · Estadísticas</h1>
+    <p class="sub">Privado. Vecinos únicos por canal, sin datos personales: el mapa cuenta un número al azar del navegador y el bot una huella cifrada del teléfono o del id de Telegram.</p>
+
+    <form id="acceso">
+      <input id="clave" type="password" placeholder="Clave del panel" autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+    </form>
+    <p id="error" class="error" role="alert"></p>
+
+    <section id="panel" hidden>
+      <p class="sub" id="generado"></p>
+      <div class="tarjetas" id="tarjetas"></div>
+
+      <h2>Últimos 30 días</h2>
+      <div class="barras" id="barras" aria-label="Vecinos por día"></div>
+      <div class="leyenda"><span style="background:var(--acento)"></span>Mapa<span style="background:var(--tg)"></span>Bot</div>
+
+      <h2>Detalle</h2>
+      <table>
+        <thead><tr><th></th><th class="n">Hoy</th><th class="n">7 días</th><th class="n">30 días</th></tr></thead>
+        <tbody id="detalle"></tbody>
+      </table>
+
+      <h2>Sectores con más reportes (30 días)</h2>
+      <table>
+        <thead><tr><th>Sector</th><th class="n">Reportes</th></tr></thead>
+        <tbody id="sectores"></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="/estadisticas/estadisticas.js"></script>
+</body>
+</html>

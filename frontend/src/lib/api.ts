@@ -26,6 +26,18 @@ export async function obtenerReportes(senal?: AbortSignal): Promise<Lectura> {
   return { reportes, guardadoEn };
 }
 
+// Vecinos que usaron Radar este mes; null mientras sean pocos (el gateway decide desde cuantos se muestra)
+export async function obtenerContador(): Promise<number | null> {
+  try {
+    const r = await fetch('/api/v1/contador');
+    if (!r.ok) return null;
+    const { mes } = (await r.json()) as { mes?: unknown };
+    return typeof mes === 'number' && mes > 0 ? mes : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function obtenerConfig(): Promise<Config> {
   const r = await fetch('/api/v1/config');
   if (!r.ok) return { whatsapp: '', telegram: '', horas: HORAS_POR_DEFECTO };

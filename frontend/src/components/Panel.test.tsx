@@ -82,4 +82,11 @@ describe('Panel', () => {
     expect(enlace.getAttribute('href')).toBe(`https://wa.me/?text=${encodeURIComponent(textoCompartir())}`);
     expect(textoCompartir('https://radar.brecha-cero.com')).toContain('https://radar.brecha-cero.com/mapa');
   });
+
+  it('muestra el contador discreto solo cuando hay numero', () => {
+    const { rerender } = render(<Panel {...base} />);
+    expect(screen.queryByText(/vecinos usaron Radar/)).not.toBeInTheDocument();
+    rerender(<Panel {...base} contador={312} />);
+    expect(screen.getByText('👥 312 vecinos usaron Radar este mes')).toBeInTheDocument();
+  });
 });

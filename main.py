@@ -6,7 +6,10 @@ y responde solo con datos reales: si no hay reportes suficientes, lo dice en vez
 
 Hora: todo se guarda y se muestra en hora de Venezuela (America/Caracas).
 """
+import hashlib
+import hmac
 import os
+import secrets
 import re
 import sqlite3
 import unicodedata
@@ -234,6 +237,16 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS ix_cortes_celda_inicio ON cortes (celda, inicio)")
+        # Contador de usuarios: un registro por dia, canal y persona, guardando solo una huella (HMAC) del id.
+        # Mapa: un numero al azar que genera el navegador. Bot: el telefono o id de Telegram, nunca en claro.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS actividad (
+                dia TEXT NOT NULL,
+                canal TEXT NOT NULL,          -- mapa | bot
+                quien TEXT NOT NULL,
+                PRIMARY KEY (dia, canal, quien)
+            )
+        """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS conversaciones (
                 telefono TEXT PRIMARY KEY,
@@ -455,6 +468,66 @@ class Confirmacion(Coordenadas):
 
 # ---------- Reportes -----------------------------------------------------------------
 
+# ---------- Contador de usuarios (sin datos personales) ----------
+CLAVE_ESTADISTICAS = os.environ.get("VL_CLAVE_ESTADISTICAS", "")      # vacia: el panel privado no existe
+CONTADOR_MINIMO = int(os.environ.get("VL_CONTADOR_MINIMO", "50"))     # el contador publico aparece desde aqui
+RE_VISITANTE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+
+
+def secreto_contador():
+    """Llave de las huellas: VL_SECRETO_CONTADOR o, si no esta, una al azar guardada junto a la base."""
+    if os.environ.get("VL_SECRETO_CONTADOR"):
+        return os.environ["VL_SECRETO_CONTADOR"].encode()
+    ruta = os.path.join(os.path.dirname(DB_PATH) or ".", "secreto_contador")
+    if not os.path.exists(ruta):
+        with open(ruta, "w") as f:
+            f.write(secrets.token_hex(32))
+    with open(ruta) as f:
+        return f.read().strip().encode()
+
+
+def huella(valor):
+    return hmac.new(secreto_contador(), str(valor).encode(), hashlib.sha256).hexdigest()[:20]
+
+
+def registrar_actividad(conn, canal, quien):
+    if quien:
+        conn.execute("INSERT OR IGNORE INTO actividad (dia, canal, quien) VALUES (?, ?, ?)",
+                     (ahora().strftime("%Y-%m-%d"), canal, huella(quien)))
+
+
+def estadisticas(conn, momento=None):
+    momento = momento or ahora()
+    def desde(dias):
+        return (momento - timedelta(days=dias - 1)).strftime("%Y-%m-%d")
+
+    def unicos(canal, dias):
+        return conn.execute("SELECT COUNT(DISTINCT quien) FROM actividad WHERE canal = ? AND dia >= ?",
+                            (canal, desde(dias))).fetchone()[0]
+
+    def reportes(dias, distintos=False):
+        campo = "COUNT(DISTINCT telefono)" if distintos else "COUNT(*)"
+        return conn.execute(f"""SELECT {campo} FROM circuitos WHERE nombre_zona != ? AND timestamp >= ?
+                                {"AND telefono != 'web'" if distintos else ""}""",
+                            (PENDIENTE, desde(dias) + " 00:00:00")).fetchone()[0]
+
+    periodos = {}
+    for nombre, dias in (("hoy", 1), ("semana", 7), ("mes", 30)):
+        periodos[nombre] = {"mapa": unicos("mapa", dias), "bot": unicos("bot", dias),
+                            "vecinos_que_reportaron": reportes(dias, distintos=True), "reportes": reportes(dias)}
+        periodos[nombre]["total"] = periodos[nombre]["mapa"] + periodos[nombre]["bot"]
+    vuelven = conn.execute("""SELECT COUNT(*) FROM (SELECT quien FROM actividad WHERE dia >= ?
+                              GROUP BY canal, quien HAVING COUNT(DISTINCT dia) >= 2)""", (desde(30),)).fetchone()[0]
+    serie = [{"dia": f["dia"], "mapa": f["mapa"], "bot": f["bot"]} for f in conn.execute("""
+        SELECT dia, SUM(canal = 'mapa') AS mapa, SUM(canal = 'bot') AS bot FROM actividad
+        WHERE dia >= ? GROUP BY dia ORDER BY dia""", (desde(30),))]
+    sectores = [{"sector": f["zona"], "reportes": f["n"]} for f in conn.execute("""
+        SELECT zona, COUNT(*) AS n FROM circuitos WHERE zona != '' AND zona IS NOT NULL AND timestamp >= ?
+        GROUP BY zona ORDER BY n DESC LIMIT 10""", (desde(30) + " 00:00:00",))]
+    return {"generado": texto_hora(momento), **periodos, "vuelven_30_dias": vuelven,
+            "por_dia": serie, "sectores_mas_activos": sectores}
+
+
 # 1. Ubicacion enviada por WhatsApp: queda pendiente hasta que el usuario diga su sector
 @app.post("/api/reportar/gps")
 async def reportar_gps(data: RegistroGPS):
@@ -462,6 +535,7 @@ async def reportar_gps(data: RegistroGPS):
     if not telefono:
         raise HTTPException(status_code=422, detail="Falta el telefono.")
     with closing(conectar()) as conn, conn:
+        registrar_actividad(conn, "bot", telefono)
         controlar_frecuencia(conn, telefono)
         # Un pendiente anterior sin respuesta se descarta: cuenta el ultimo PIN
         conn.execute("DELETE FROM circuitos WHERE telefono = ? AND nombre_zona = ?", (telefono, PENDIENTE))
@@ -481,6 +555,7 @@ async def verificar_estado_usuario(telefono: str = ""):
     if not tel:
         return {"estado": "libre"}
     with closing(conectar()) as conn, conn:
+        registrar_actividad(conn, "bot", tel)   # el Conector pregunta esto con cada mensaje escrito
         fila = conn.execute("SELECT estado, actualizado FROM conversaciones WHERE telefono = ?", (tel,)).fetchone()
         if not fila:
             return {"estado": "libre"}
@@ -985,6 +1060,40 @@ async def analitica_patrones(zona: str):
         nombre = sector["nombre"] or normalizar_zona(zona)
         p = patrones_zona(conn, nombre)
     return {**p, "sector": sector, "lineas": lineas_patron(p)}
+
+
+# 10. Contador de usuarios
+class Visita(BaseModel):
+    visitante: str
+
+
+@app.post("/api/visita")
+async def visita(data: Visita):
+    """El mapa avisa una vez al dia con un numero al azar que genero el navegador (no identifica a nadie)."""
+    if not RE_VISITANTE.match(data.visitante or ""):
+        raise HTTPException(status_code=422, detail="Visitante invalido.")
+    with closing(conectar()) as conn, conn:
+        registrar_actividad(conn, "mapa", data.visitante)
+    return {"status": "ok"}
+
+
+@app.get("/api/contador")
+async def contador():
+    """Vecinos que usaron Radar en los ultimos 30 dias (mapa + bot). None hasta llegar a CONTADOR_MINIMO."""
+    with closing(conectar()) as conn:
+        e = estadisticas(conn)
+    return {"mes": e["mes"]["total"] if e["mes"]["total"] >= CONTADOR_MINIMO else None}
+
+
+@app.get("/api/estadisticas")
+async def ver_estadisticas(request: Request):
+    """Panel privado: requiere VL_CLAVE_ESTADISTICAS en la cabecera X-Radar-Clave."""
+    if not CLAVE_ESTADISTICAS:
+        raise HTTPException(status_code=404, detail="Panel desactivado.")
+    if not hmac.compare_digest(request.headers.get("x-radar-clave", ""), CLAVE_ESTADISTICAS):
+        raise HTTPException(status_code=403, detail="Clave incorrecta.")
+    with closing(conectar()) as conn:
+        return estadisticas(conn)
 
 
 @app.get("/api/salud")
