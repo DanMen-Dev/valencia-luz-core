@@ -1,148 +1,127 @@
-# Enterprise Architecture for Real-Time Geospatial AI & Telecommunications Gateway 💡🛰️📱
-### Valencia Luz Core v1.0.0 — Distributed Infrastructure for Racionamiento Predicitivo & Crowdsourcing
+# Radar 📡 · cortes de luz reportados por los vecinos
 
-Repositorio central del ecosistema distribuido global diseñado para la captura, procesamiento cognitivo, persistencia inmutable y mapeo probabilístico de contingencias eléctricas. El sistema unifica canales conversacionales de telefonía móvil (WhatsApp API) con backends geoespaciales mediante una arquitectura robusta de microservicios contenerizada en la nube de alta disponibilidad.
+[![Pruebas](https://github.com/DanMen-Dev/valencia-luz-core/actions/workflows/pruebas.yml/badge.svg)](https://github.com/DanMen-Dev/valencia-luz-core/actions/workflows/pruebas.yml)
 
----
+**Mapa en vivo:** https://radar.brecha-cero.com/mapa
 
-## 🗺️ Visión de la Arquitectura Distribuida y Pipeline de Datos
+Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan desde la web o por WhatsApp ("no hay luz aquí" / "ya volvió"), el mapa muestra los reportes de las últimas 12 horas y un bot responde cómo está un sector con datos reales: desde qué hora no hay luz, cuánto han durado los cortes de la semana y, si hay datos suficientes, una hora estimada de retorno.
 
-El pipeline de datos opera de forma asíncrona y síncrona a través de cuatro capas independientes y tolerantes a fallos, comunicando dos clústeres de automatización internacionales (**Bogotá - Alemania**):
+> *English summary:* community-sourced power-outage map for Venezuela. FastAPI + SQLite backend, Node/Express map gateway with Leaflet, and an n8n WhatsApp flow that routes messages with rules and uses a single LLM call (zone extraction). Self-hosted with Docker Compose behind nginx on a Hetzner VPS.
 
-```text
-[Ciudadano WhatsApp] 
-         │
-         ▼
- 🇨🇴 [Gateway de Telecomunicaciones (WAHA API + n8n Puente)] ➔ Aduana perimetral anti-bucles infinitos (Puerto 3000/5050)
-         │
-   (Puente HTTP Sincronizado Transatlántico en Puerto Seguro 443)
-         │
-         ▼
- 🇩🇪 [Orquestador de Eventos (n8n Core - Hetzner Alemania)] ➔ Filtro de exclusión mutua por tipado de datos (Puerto 5678)
-         │
-         ├─── CASO A (Ubicación Satelital Nativa) ➔ Ingesta Inmutable ➔ [FastAPI /api/reportar/gps]
-         │
-         ├─── CASO B (Texto de Crowdsourcing) ➔ Validación de Sesión ➔ [FastAPI /api/reportar/nombre]
-         │
-         └─── CASO C (Consulta Libre Escrita) ➔ OpenAI Extractor ➔ [FastAPI /api/analitica/historico] ➔ OpenAI Redactor UX
+## Estado
+
+| Parte | Estado |
+|---|---|
+| Mapa web y reporte desde el navegador | En producción |
+| Backend (API, estimaciones, respaldo diario) | En producción, 27 pruebas automáticas |
+| Bot de WhatsApp (n8n + Chatwoot) | Probado de punta a punta con eventos simulados; falta conectar un número de WhatsApp |
+| Frontend en React | Próximo paso |
+
+No es información oficial de Corpoelec: todo sale de lo que reportan los vecinos.
+
+## Cómo funciona
+
+```mermaid
+flowchart LR
+    V[Vecino] -->|web| N[nginx · radar.brecha-cero.com]
+    V -->|WhatsApp| C[Chatwoot]
+    N --> G[Gateway Node/Express<br/>mapa Leaflet]
+    G -->|/api/mapa/activos<br/>/api/reportar| B[(Backend FastAPI<br/>SQLite en disco)]
+    C --> P[n8n · Puente] --> K[n8n · Conector]
+    K -->|reglas| B
+    K -.->|solo para consultas escritas| O[OpenAI gpt-4o-mini<br/>extrae el sector]
+    K --> P --> C --> V
 ```
 
-1. **Capa de Telecomunicaciones (WAHA Engine):** Actúa como aduana perimetral corriendo bajo el motor WEBJS/Chromium, capturando reportes en caliente desde redes móviles a nivel de usuario de forma ininterrumpida.
-2. **Orquestación Perimetral Anti-Bucles (n8n Bogotá):** Filtra los paquetes entrantes discriminando mensajes escritos de metadatos automáticos del sistema (`incoming` vs `outgoing`), mitigando ráfagas recursivas de red y asegurando la estabilidad del canal móvil.
-3. **Capa Cognitiva de Inteligencia Mixta (OpenAI API + n8n Core Alemania):** Para evitar la inestabilidad de las herramientas de llamada de funciones (*Function Calling*) de las interfaces visuales, se implementa una arquitectura lineal dual: El primer LLM (`gpt-4o-mini`) actúa como extractor semántico para normalizar zonas. Posteriormente, un nodo de red estándar HTTP interroga al backend inyectándole el parámetro dinámico `?zona={{ $json.zona }}`. Finalmente, un segundo LLM redacta el informe probabilístico con empatía y claridad institucional.
-4. **Core Backend & Cartografía (FastAPI + SQLite3):** Motor síncrono en Python que asimila las variables geoespaciales, gestiona los hilos de memoria conversacional para el crowdsourcing asíncrono, calcula zonas de riesgo y renderiza manchas de racionamiento translúcidas sobre mapas interactivos mediante Leaflet.
+**Por WhatsApp**
 
----
+1. El vecino envía su **ubicación**. El backend la guarda como pendiente y el bot le pide el nombre del sector (tiene 10 minutos).
+2. Responde **"Prebo"** (sin luz) o **"Si, Prebo"** (volvió la luz). El backend completa el reporte; el estado se lee del texto con reglas, no con IA.
+3. Si escribe una **consulta** ("¿cómo está la luz en Tocuyito?"), un único llamado al modelo extrae el sector y el backend devuelve el mensaje ya redactado con datos reales.
 
-## 🛠️ Stack Tecnológico & Infraestructura
+Saludos, ubicaciones y respuestas de sector se resuelven con reglas en un nodo de código; el modelo solo interviene en consultas libres. Antes el flujo usaba tres llamados (clasificar, extraer y redactar) y el redactor inventaba horas cuando faltaban datos.
 
-- **Cloud Provider:** Hetzner Cloud (VPS Dedicated CPU Ubuntu Linux, Datacenter Alemania).
-- **Reverse Proxy & SSL:** Nginx Server + Let's Encrypt Multidominio administrado a nivel de Kernel de red (Puerto seguro 443).
-- **Backend Engines:** FastAPI (Python 3.11 Asynchronous Framework), Node.js, n8n Automation Engine.
-- **Database Layer:** SQLite3 (Persistencia relacional local inmutable de alto rendimiento para escrituras masivas).
-- **AI Core:** OpenAI Large Language Models API (`gpt-4o-mini`).
+**Por la web**
 
----
+Dos botones ("No hay luz donde estoy" / "Ya volvió la luz donde estoy") usan la ubicación del navegador. El reporte toma el nombre del sector reportado más cercano (a 1,5 km o menos). El mapa se actualiza cada minuto.
 
-## 🛡️ Capacidades de Ingeniería Demostradas (DevOps Senior)
+### Qué calcula el backend (y qué no)
 
-### 1. Saneamiento Sintáctico en la Capa de Transporte
-Implementación de lógica nativa en JavaScript para la deserialización de objetos JSON crudos encapsulados como cadenas de texto plano (`String`). El flujo puente implementa un blindaje inmutable contra caracteres de control y saltos de línea físicos de teclado mediante metaprogramación de Node.js:
-```json
-"content": {{ JSON.stringify(\$json.mensaje_confirmacion) }}
+Para cada sector, con los reportes de los últimos 7 días:
+
+- **Corte:** un episodio que empieza con un reporte "sin luz" y termina con el primer "volvió la luz" posterior.
+- **Duración promedio:** el promedio de los cortes que sí terminaron.
+- **Retorno estimado:** inicio del corte de hoy + duración promedio. **Solo se da si hay cortes medidos**; si no, el bot lo dice.
+- **Probabilidad de corte:** días con al menos un corte ÷ 7.
+
+Es estadística simple y transparente, no un modelo predictivo. Un modelo de verdad necesita más historia de la que hay hoy.
+
+## Decisiones y lecciones
+
+- **La base de datos vivía dentro del contenedor.** Un `docker compose up --build` la habría borrado, y el respaldo nocturno apuntaba a un archivo que no existía. Ahora vive en `./datos` (volumen) y el respaldo usa la API de backup de SQLite.
+- **El estado de la conversación estaba en memoria** y se perdía con cada reinicio. Pasó a una tabla, con vencimiento.
+- **Un nombre de sector podía inyectar HTML en el mapa.** Los popups ahora se arman con nodos de texto; además hay CSP y otras cabeceras de seguridad.
+- **Campos que no coincidían entre n8n y el backend** (`nombre_zona` vs `zona`, `tiene_luz` vs `estado_luz`). El backend acepta ambos, y el estado sale del texto: n8n buscaba "si" en cualquier parte y "Casiano" contaba como "con luz".
+- **nginx compartido con otro proyecto:** `/static/` lo tomaba Django y devolvía 400. El subdominio tiene ahora su propio bloque.
+- **Puertos cerrados al público:** n8n y el gateway escuchan solo en `127.0.0.1`; el puente llama al Conector por `localhost`. Los secretos van en credenciales de n8n o en `.env`, nunca en el repo.
+- **Topes contra abuso:** 6 reportes por hora por teléfono y 10 por hora por conexión en la web; coordenadas fuera de Venezuela se rechazan.
+
+## Stack
+
+Python 3.13 · FastAPI · SQLite · Node 24 · Express · Leaflet · n8n · Chatwoot · OpenAI (gpt-4o-mini) · Docker Compose · nginx · Let's Encrypt · GitHub Actions · VPS en Hetzner.
+
+## Estructura
+
 ```
-Esto garantiza la integridad estructural de las peticiones HTTP reduciendo a 0% los errores sintácticos de red tipo `Bad control character` o `Unexpected token ','`.
-
-### 2. Control de Estado Conversacional Asíncrono (Crowdsourcing Dinámico)
-El sistema gestiona de forma determinista hilos conversacionales persistentes de corta duración en el backend. Si el usuario envía un PIN GPS, el enrutador lógico lo almacena temporalmente como `pendiente de asignacion`. Al responder el usuario con el texto de la urbanización, el motor del pipeline evalúa la propiedad de estado directo en la raíz de la RAM del orquestador:
-```javascript
-{{ \$json.estado }} == "esperando"
-```
-Desviando el flujo por la compuerta lógica `TRUE` para ejecutar un `UPDATE` masivo relacional en caliente, vinculando de forma permanente las coordenadas con el sector real del ciudadano y dibujando la mancha de contingencia en la cartografía web.
-
-### 3. Lógica de Matemática Predictiva No-Bloqueante
-El Agente cognitivo asimila los datos numéricos crudos aplanados directamente de la base de datos de Hetzner y ejecuta la ecuación probabilística de contingencia en caliente:
-$$\text{Probabilidad de Racionamiento} = \left( \frac{\text{Días con Cortes}}{\text{Total Días Evaluados}} \right) \times 100$$
-Ofreciendo una respuesta institucional, transparente y altamente humana al ciudadano sobre el riesgo de sufrir una suspensión de energía en su circuito en las próximas horas.
-
----
-
-## 📦 Planos de Despliegue Unificados (Docker Compose)
-
-El ecosistema se despliega en caliente mediante un único plano unificado que blinda la persistencia de datos y elimina las imágenes en caché del pasado mediante compilación forzada de código (`build: .`):
-
-```yaml
-version: '3.8'
-
-services:
-  # Capa de Análisis de Datos Geoespaciales & API Relacional
-  motor-python:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: luz_backend_python
-    expose:
-      - "8000"
-    restart: always
-
-  # Gateway de Orquestación de Telecomunicaciones (Bogotá)
-  orquestador-node:
-    build:
-      context: ./GatewayNode
-      dockerfile: Dockerfile
-    container_name: luz_gateway_node
-    ports:
-      - "5050:5000"
-    environment:
-      - PORT=5000
-    restart: always
-    depends_on:
-      - motor-python
-
-  # Capa de Automatización & Pipelines Cognitivos (Alemania)
-  automatizacion-n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
-    container_name: luz_plataforma_n8n
-    restart: always
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_HOST=://brecha-cero.com
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - WEBHOOK_URL=http://://brecha-cero.com/
-    volumes:
-      - n8n_data_storage:/home/node/.n8n
-
-  # Capa de Telecomunicaciones (WhatsApp HTTP API Gateway)
-  puente-whatsapp-waha:
-    image: devlikeapro/waha:latest
-    container_name: luz_puente_whatsapp_waha
-    restart: always
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
-    volumes:
-      - waha_sessions:/app/.sessions
-
-volumes:
-  n8n_data_storage:
-    name: luz_n8n_data_volume
-  waha_sessions:
-    name: luz_waha_sessions_volume
+main.py                  API FastAPI: reportes, conversación, resumen por sector, mapa
+tests/                   pruebas con pytest (base temporal, hora fija)
+GatewayNode/             gateway del mapa: server.js + public/ (mapa.html, mapa.css, mapa.js)
+n8n/                     flujos exportados (Conector y Puente) y probar_conector.sh
+docker-compose.yml       backend, gateway y n8n
+backup_db.sh             respaldo diario de la base (cron), guarda 7 días
+seed_data.py             datos falsos para desarrollo; no correr en producción
 ```
 
----
-
-## 🚀 Instrucciones de Despliegue en Servidor Limpio
-
-Para romper la caché física del procesador de Linux e inyectar las nuevas reglas relacionales en caliente, clone el repositorio en su VPS y ejecute la re-creación destructiva perimetral:
+## Correrlo
 
 ```bash
-cd ~/ValenciaLuz
-docker compose down && docker compose up -d --build
+docker compose up -d --build
+# mapa:     http://127.0.0.1:5050/mapa
+# backend:  docker exec luz_backend_python python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/api/salud').read().decode())"
 ```
 
+Pruebas del backend:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+Prueba del bot sin WhatsApp (envía eventos simulados al Conector y borra sus reportes al final):
+
+```bash
+bash n8n/probar_conector.sh
+```
+
+### Configuración (`.env`)
+
+| Variable | Para qué | Por defecto |
+|---|---|---|
+| `VL_WHATSAPP` | Número del bot para el botón del mapa (solo dígitos); vacío lo oculta | vacío |
+| `VL_DB_PATH` | Ruta de la base SQLite | `/app/datos/valencia_luz_persistente.db` |
+| `VL_HORAS_MAPA` | Horas que un reporte se ve en el mapa | 12 |
+| `VL_REPORTES_POR_HORA` | Tope por teléfono | 6 |
+| `VL_MINUTOS_ESPERA_NOMBRE` | Tiempo para responder el sector | 10 |
+| `VL_REPORTES_WEB_POR_HORA` | Tope de reportes web por conexión | 10 |
+
+Los nombres internos (`valencia_luz`, `luz_backend_python`, el repo) vienen del nombre anterior del proyecto y se mantienen para no romper la base ni los flujos.
+
+## Próximos pasos
+
+- Conectar un número de WhatsApp al bot.
+- Frontend en React (con agrupación de reportes por sector).
+- Más historia → estimaciones por franja horaria.
+
 ---
-Developed by Daniel Mendoza — CTO Portfolio.
+
+Hecho por **Daniel Mendoza** ([DanMen-Dev](https://github.com/DanMen-Dev)), con ayuda de Claude en la revisión y los parches.
