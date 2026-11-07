@@ -1,0 +1,14 @@
+# Valencia Luz Core: nunca subir claves, datos de personas ni archivos generados
+.env
+*.db
+*.db-journal
+backups/
+venv/
+__pycache__/
+*.pyc
+node_modules/
+*.log
+*.tgz
+*.save
+*.patch
+_archivo/
