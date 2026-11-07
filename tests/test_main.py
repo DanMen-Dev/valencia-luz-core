@@ -288,5 +288,94 @@ def test_migra_reportes_viejos(tmp_path, monkeypatch):
         assert c.execute("SELECT zona, origen FROM circuitos").fetchone() == ("prebo", "whatsapp")
 
 
+def test_la_migracion_calcula_celdas_y_votos(tmp_path, monkeypatch):
+    ruta = tmp_path / "vieja.db"
+    with sqlite3.connect(ruta) as c:
+        c.execute("""CREATE TABLE circuitos (id INTEGER PRIMARY KEY AUTOINCREMENT, telefono TEXT, latitud REAL,
+                     longitud REAL, nombre_zona TEXT, tiene_luz INTEGER, timestamp DATETIME)""")
+        c.execute("INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, tiene_luz, timestamp) "
+                  "VALUES ('58414', 10.2134, -68.0125, 'prebo-Lat:10.2-Lon:-68.0', 0, '2026-09-18 10:00:00')")
+        c.execute("INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, tiene_luz, timestamp) "
+                  "VALUES ('web', 10.2134, -68.0125, 'guaparo', 0, '2026-09-18 11:00:00')")   # web: no vota
+    monkeypatch.setenv("VL_DB_PATH", str(ruta))
+    import main
+    importlib.reload(main)
+    main.init_db()   # dos veces: no debe duplicar votos
+    with sqlite3.connect(ruta) as c:
+        assert {f[0] for f in c.execute("SELECT celda FROM circuitos")} == {"10.21_-68.02"}
+        assert c.execute("SELECT nombre, celda, votos FROM alias").fetchall() == [("prebo", "10.21_-68.02", 1)]
+
+
+# ---------- Celdas y nombres populares
+
+def nombrar(cliente, tel, texto, lat=10.2134, lon=-68.0125):
+    assert gps(cliente, tel=tel, lat=lat, lon=lon).status_code == 200
+    return cliente.post("/api/reportar/nombre", json={"telefono": tel, "nombre_zona": texto})
+
+
+def test_celdas_fijas_y_vecinas(app_mod):
+    assert app_mod.celda_de(10.21, -68.0125) == "10.21_-68.02"     # 10.21 no cae en 10.20 por coma flotante
+    assert app_mod.celda_de(10.2199, -68.0001) == "10.21_-68.01"
+    assert app_mod.centro_celda("10.21_-68.02") == (10.215, -68.015)
+    vecinas = app_mod.celdas_vecinas("10.21_-68.02")
+    assert len(set(vecinas)) == 9 and "10.22_-68.01" in vecinas and "10.20_-68.03" in vecinas
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("Urb. La Prebo", "prebo"), ("Sector Prebo", "prebo"), ("  PREBO ", "prebo"),
+    ("Zona Industrial", "industrial"), ("Sector", "sector"),
+])
+def test_limpiar_alias(app_mod, texto, esperado):
+    assert app_mod.limpiar_alias(texto) == esperado
+
+
+def test_el_nombre_que_escribe_el_vecino_vota_en_su_celda(app_mod, cliente):
+    nombrar(cliente, "58414001", "Prebo")
+    nombrar(cliente, "58414002", "Urb. Prebo")
+    nombrar(cliente, "58414003", "Prevo")
+    with sqlite3.connect(app_mod.DB_PATH) as c:
+        votos = dict(((n, cel), v) for n, cel, v in c.execute("SELECT nombre, celda, votos FROM alias"))
+    assert votos == {("prebo", "10.21_-68.02"): 2, ("prevo", "10.21_-68.02"): 1}
+
+
+def test_una_variante_minoritaria_se_ve_con_el_nombre_mas_votado(cliente):
+    for i, texto in enumerate(["Prebo", "prebo", "Sector Prebo"]):
+        nombrar(cliente, f"5841400{i}", texto)
+    nombrar(cliente, "58414009", "Prevo")
+    assert {m["nombre_zona"] for m in cliente.get("/api/mapa/activos").json()} == {"prebo"}
+
+
+def test_un_sector_de_borde_conserva_su_nombre(cliente):
+    for i in range(2):
+        nombrar(cliente, f"5841400{i}", "Prebo")
+    nombrar(cliente, "58414009", "Kerdell")      # 1 de 3 votos (33 %): tiene peso propio
+    assert {m["nombre_zona"] for m in cliente.get("/api/mapa/activos").json()} == {"prebo", "kerdell"}
+
+
+def test_el_reporte_web_toma_el_nombre_de_su_celda_o_de_sus_vecinas(cliente):
+    nombrar(cliente, "58414001", "Prebo")
+    misma = cliente.post("/api/reportar", json={"latitud": 10.2180, "longitud": -68.0110, "tiene_luz": 0}).json()
+    vecina = cliente.post("/api/reportar", json={"latitud": 10.2250, "longitud": -68.0125, "tiene_luz": 0}).json()
+    lejos = cliente.post("/api/reportar", json={"latitud": 10.4000, "longitud": -68.0125, "tiene_luz": 0}).json()
+    assert (misma["circuito_asignado"], vecina["circuito_asignado"], lejos["circuito_asignado"]) == \
+        ("PREBO", "PREBO", "SIN ZONA")
+
+
+def test_el_resumen_del_sector_suma_todas_sus_variantes(app_mod, cliente):
+    for i, texto in enumerate(["Prebo", "prebo", "Urb Prebo"]):
+        nombrar(cliente, f"5841400{i}", texto)
+    nombrar(cliente, "58414009", "Prevo")
+    r = cliente.get("/api/analitica/historico", params={"zona": "Sector Prebo"}).json()
+    assert r["estado"] == "sin_luz" and r["reportes_7_dias"] == 4
+
+
+def test_consultar_un_nombre_popular_y_sus_celdas(cliente):
+    nombrar(cliente, "58414001", "Prebo")
+    r = cliente.get("/api/sectores", params={"nombre": "Urb. Prebo"}).json()
+    assert r["nombre"] == "prebo" and r["conocido"] is True
+    assert r["celdas"][0]["id"] == "10.21_-68.02" and r["celdas"][0]["cubre"] is True
+    assert cliente.get("/api/sectores", params={"nombre": "Guaparo"}).json()["conocido"] is False
+
+
 def test_salud(cliente):
     assert cliente.get("/api/salud").json()["status"] == "ok"

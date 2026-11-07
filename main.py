@@ -12,7 +12,7 @@ import sqlite3
 import unicodedata
 from contextlib import closing
 from datetime import datetime, timedelta
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, floor, radians, sin, sqrt
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Request
@@ -35,6 +35,10 @@ HORAS_CORTE = int(os.environ.get("VL_HORAS_CORTE", "6"))
 HORAS_MAPA = int(os.environ.get("VL_HORAS_MAPA", str(HORAS_CORTE)))
 REPORTES_POR_HORA = int(os.environ.get("VL_REPORTES_POR_HORA", "6"))  # tope por telefono (frena el spam)
 KM_ZONA_CERCANA = 1.5                                               # reporte web sin zona: toma la mas cercana
+# Celdas: cuadros fijos del mapa de 0,01 grados (~1,1 km x 1,1 km en Venezuela, el tamano de un sector).
+# El id sale de las coordenadas redondeadas hacia abajo ('10.21_-68.01'): el mismo lugar da siempre la misma celda.
+PASO_CELDA = 0.01
+PESO_MINIMO_ALIAS = 0.3     # un nombre "cubre" una celda si tiene al menos el 30 % de sus votos
 # Venezuela, aprox.: se rechazan coordenadas que no pueden ser un reporte real
 LAT_MIN, LAT_MAX, LON_MIN, LON_MAX = 0.5, 12.6, -73.5, -59.5
 
@@ -86,6 +90,37 @@ def zona_de(nombre_zona):
     return normalizar_zona(base)
 
 
+def celda_de(lat, lon):
+    """Id de la celda de un punto. round() antes de floor(): 10.21 * 100 da 1020.9999... en coma flotante."""
+    fila = floor(round(lat / PASO_CELDA, 6))
+    columna = floor(round(lon / PASO_CELDA, 6))
+    return f"{fila * PASO_CELDA:.2f}_{columna * PASO_CELDA:.2f}"
+
+
+def centro_celda(celda):
+    lat, lon = (float(x) for x in celda.split("_"))
+    return round(lat + PASO_CELDA / 2, 6), round(lon + PASO_CELDA / 2, 6)
+
+
+def celdas_vecinas(celda):
+    """La celda y sus 8 vecinas: dos casas a 50 m pueden caer a cada lado de una linea de la cuadricula."""
+    lat, lon = centro_celda(celda)
+    return [celda_de(lat + d_lat * PASO_CELDA, lon + d_lon * PASO_CELDA)
+            for d_lat in (-1, 0, 1) for d_lon in (-1, 0, 1)]
+
+
+# Palabras que no distinguen un sector: "Urb. Prebo", "Sector Prebo" y "Prebo" son el mismo nombre popular
+RELLENO = {"urb", "urbanizacion", "sector", "barrio", "bo", "res", "residencias", "conjunto", "parroquia",
+           "zona", "la", "el", "los", "las", "de", "del", "en"}
+
+
+def limpiar_alias(valor):
+    """'Urb. La Prebo' -> 'prebo'. Si solo quedan palabras de relleno, se deja el nombre normalizado."""
+    normal = normalizar_zona(valor)
+    util = " ".join(p for p in normal.split() if p not in RELLENO)
+    return util or normal
+
+
 def distancia_km(lat1, lon1, lat2, lon2):
     dlat, dlon = radians(lat2 - lat1), radians(lon2 - lon1)
     a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
@@ -124,7 +159,42 @@ def init_db():
             for fila in conn.execute("SELECT id, nombre_zona FROM circuitos").fetchall():
                 z = "" if fila["nombre_zona"] == PENDIENTE else zona_de(fila["nombre_zona"])
                 conn.execute("UPDATE circuitos SET zona = ? WHERE id = ?", (z, fila["id"]))
+        if "celda" not in columnas:
+            conn.execute("ALTER TABLE circuitos ADD COLUMN celda TEXT")
+        # Reportes que todavia no tienen celda (los de antes de esta version): se calcula de sus coordenadas
+        for fila in conn.execute("SELECT id, latitud, longitud FROM circuitos WHERE celda IS NULL").fetchall():
+            if fila["latitud"] is not None and fila["longitud"] is not None:
+                conn.execute("UPDATE circuitos SET celda = ? WHERE id = ?",
+                             (celda_de(fila["latitud"], fila["longitud"]), fila["id"]))
         conn.execute("CREATE INDEX IF NOT EXISTS ix_circuitos_zona_tiempo ON circuitos (zona, timestamp)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_circuitos_celda_tiempo ON circuitos (celda, timestamp)")
+        # Celdas y nombres populares: cada vez que un vecino manda su ubicacion y escribe su sector, ese nombre
+        # suma un voto en esa celda. Asi "Prebo", "Prevo" y "Urb Prebo" quedan amarrados al mismo lugar.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS celdas (
+                id TEXT PRIMARY KEY,
+                lat_centro REAL NOT NULL,
+                lon_centro REAL NOT NULL,
+                creada DATETIME NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS alias (
+                nombre TEXT NOT NULL,
+                celda TEXT NOT NULL REFERENCES celdas(id),
+                votos INTEGER NOT NULL DEFAULT 0,
+                ultimo DATETIME NOT NULL,
+                PRIMARY KEY (nombre, celda)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_alias_celda ON alias (celda)")
+        # Primera vez: los votos se reconstruyen con los reportes que ya hay
+        if conn.execute("SELECT COUNT(*) FROM alias").fetchone()[0] == 0:
+            for f in conn.execute(f"""
+                SELECT zona, celda, timestamp FROM circuitos
+                WHERE {SQL_NOMBRE_DEL_VECINO} AND celda IS NOT NULL ORDER BY timestamp
+            """).fetchall():
+                votar_alias(conn, f["zona"], f["celda"], f["timestamp"])
         conn.execute("CREATE INDEX IF NOT EXISTS ix_circuitos_tel_tiempo ON circuitos (telefono, timestamp)")
         # La conversacion ("esperando el nombre del sector") vive en la base: sobrevive a un reinicio
         conn.execute("""
@@ -134,6 +204,79 @@ def init_db():
                 actualizado DATETIME NOT NULL
             )
         """)
+
+
+# Solo cuentan como voto los nombres que escribio un vecino junto con su ubicacion (WhatsApp/Telegram).
+# Los reportes web y los "yo tambien" toman el nombre de la zona, no lo aportan.
+SQL_NOMBRE_DEL_VECINO = ("telefono != 'web' AND zona IS NOT NULL AND zona != '' "
+                         f"AND nombre_zona != '{PENDIENTE}'")
+
+
+def registrar_celda(conn, celda, cuando=None):
+    lat, lon = centro_celda(celda)
+    conn.execute("INSERT OR IGNORE INTO celdas (id, lat_centro, lon_centro, creada) VALUES (?, ?, ?, ?)",
+                 (celda, lat, lon, cuando or texto_hora()))
+
+
+def votar_alias(conn, nombre, celda, cuando=None):
+    """Un voto para el nombre popular 'nombre' en 'celda'."""
+    nombre = limpiar_alias(nombre)
+    if not nombre or not celda:
+        return
+    cuando = cuando or texto_hora()
+    registrar_celda(conn, celda, cuando)
+    conn.execute("""
+        INSERT INTO alias (nombre, celda, votos, ultimo) VALUES (?, ?, 1, ?)
+        ON CONFLICT (nombre, celda) DO UPDATE SET votos = votos + 1, ultimo = excluded.ultimo
+    """, (nombre, celda, cuando))
+
+
+def nombre_de_celda(conn, celda, mirar_vecinas=True):
+    """Nombre popular mas votado de la celda; si no tiene, el de sus vecinas. '' si nadie la ha nombrado."""
+    fila = conn.execute("SELECT nombre FROM alias WHERE celda = ? ORDER BY votos DESC, ultimo DESC LIMIT 1",
+                        (celda,)).fetchone()
+    if fila or not mirar_vecinas:
+        return fila["nombre"] if fila else ""
+    vecinas = celdas_vecinas(celda)
+    fila = conn.execute(f"""
+        SELECT nombre, SUM(votos) AS v FROM alias WHERE celda IN ({",".join("?" * len(vecinas))})
+        GROUP BY nombre ORDER BY v DESC LIMIT 1
+    """, vecinas).fetchone()
+    return fila["nombre"] if fila else ""
+
+
+def peso_alias(conn, nombre, celda):
+    """Que parte de los votos de la celda tiene este nombre (0 a 1)."""
+    fila = conn.execute("""
+        SELECT COALESCE(SUM(CASE WHEN nombre = ? THEN votos END), 0) AS mios, SUM(votos) AS total
+        FROM alias WHERE celda = ?
+    """, (limpiar_alias(nombre), celda)).fetchone()
+    return (fila["mios"] / fila["total"]) if fila and fila["total"] else 0.0
+
+
+def nombre_para_mostrar(conn, zona, celda):
+    """El nombre con que se ve un reporte: el suyo si tiene peso en su celda; si es una variante minoritaria
+    ('prevo' donde casi todos dicen 'prebo'), el nombre mas votado de la celda. Asi el mapa no parte un
+    sector en dos por una letra."""
+    propio = "" if normalizar_zona(zona) in ("", "sin zona", "sector sin nombre") else limpiar_alias(zona)
+    if not celda:
+        return propio
+    if propio and peso_alias(conn, propio, celda) >= PESO_MINIMO_ALIAS:
+        return propio
+    return nombre_de_celda(conn, celda, mirar_vecinas=not propio) or propio
+
+
+def celdas_de_alias(conn, nombre):
+    """Celdas que cubre un nombre popular: donde tiene al menos PESO_MINIMO_ALIAS de los votos de la celda.
+    Una celda de borde (media Prebo, media Kerdell) cuenta para los dos si ambos tienen peso."""
+    nombre = limpiar_alias(nombre)
+    if not nombre:
+        return []
+    filas = conn.execute("""
+        SELECT a.celda, a.votos, (SELECT SUM(votos) FROM alias b WHERE b.celda = a.celda) AS total
+        FROM alias a WHERE a.nombre = ? ORDER BY a.votos DESC
+    """, (nombre,)).fetchall()
+    return [f["celda"] for f in filas if f["total"] and f["votos"] / f["total"] >= PESO_MINIMO_ALIAS]
 
 
 init_db()
@@ -209,9 +352,9 @@ async def reportar_gps(data: RegistroGPS):
         # Un pendiente anterior sin respuesta se descarta: cuenta el ultimo PIN
         conn.execute("DELETE FROM circuitos WHERE telefono = ? AND nombre_zona = ?", (telefono, PENDIENTE))
         conn.execute("""
-            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen)
-            VALUES (?, ?, ?, ?, '', 0, ?, 'whatsapp')
-        """, (telefono, data.latitud, data.longitud, PENDIENTE, texto_hora()))
+            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen, celda)
+            VALUES (?, ?, ?, ?, '', 0, ?, 'whatsapp', ?)
+        """, (telefono, data.latitud, data.longitud, PENDIENTE, texto_hora(), celda_de(data.latitud, data.longitud)))
         conn.execute("REPLACE INTO conversaciones (telefono, estado, actualizado) VALUES (?, 'esperando', ?)",
                      (telefono, texto_hora()))
     return {"status": "success", "message": "Ubicacion recibida. Falta el nombre del sector."}
@@ -255,8 +398,10 @@ async def reportar_nombre(request: Request):
         """, (telefono, PENDIENTE)).fetchone()
         if not fila:
             raise HTTPException(status_code=404, detail="No hay una ubicacion pendiente para este telefono.")
-        conn.execute("UPDATE circuitos SET nombre_zona = ?, zona = ?, tiene_luz = ? WHERE id = ?",
-                     (zona, zona, tiene_luz, fila["id"]))
+        celda = celda_de(fila["latitud"], fila["longitud"])
+        conn.execute("UPDATE circuitos SET nombre_zona = ?, zona = ?, tiene_luz = ?, celda = ? WHERE id = ?",
+                     (zona, zona, tiene_luz, celda, fila["id"]))
+        votar_alias(conn, zona, celda)   # el nombre que escribio el vecino queda amarrado a su celda
         conn.execute("DELETE FROM conversaciones WHERE telefono = ?", (telefono,))
 
     return {
@@ -272,12 +417,15 @@ async def reportar_nombre(request: Request):
 @app.post("/api/reportar")
 async def reportar_web(data: ReporteWeb):
     with closing(conectar()) as conn, conn:
-        zona = normalizar_zona(data.zona) or zona_cercana(conn, data.latitud, data.longitud)
+        celda = celda_de(data.latitud, data.longitud)
+        # El nombre sale de la celda (o sus vecinas); si nadie la ha nombrado, del sector reportado mas cerca
+        zona = (normalizar_zona(data.zona) or nombre_de_celda(conn, celda)
+                or zona_cercana(conn, data.latitud, data.longitud))
         tiene_luz = 1 if data.tiene_luz == 1 else 0
         conn.execute("""
-            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen)
-            VALUES ('web', ?, ?, ?, ?, ?, ?, 'web')
-        """, (data.latitud, data.longitud, zona or "sin zona", zona, tiene_luz, texto_hora()))
+            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen, celda)
+            VALUES ('web', ?, ?, ?, ?, ?, ?, 'web', ?)
+        """, (data.latitud, data.longitud, zona or "sin zona", zona, tiene_luz, texto_hora(), celda))
     return {"status": "success", "circuito_asignado": (zona or "sin zona").upper(), "tiene_luz": tiene_luz}
 
 
@@ -293,16 +441,18 @@ async def confirmar(data: Confirmacion):
         raise HTTPException(status_code=422, detail="Falta el sector.")
     tiene_luz = 1 if data.tiene_luz == 1 else 0
     with closing(conectar()) as conn, conn:
+        celdas = celdas_de_alias(conn, zona)
+        filtro = f"(zona = ? OR celda IN ({','.join('?' * len(celdas))}))" if celdas else "zona = ?"
         filas = conn.execute(
-            "SELECT latitud, longitud FROM circuitos WHERE zona = ? AND timestamp >= ? AND nombre_zona != ?",
-            (zona, texto_hora(restar_horas=HORAS_MAPA), PENDIENTE)).fetchall()
+            f"SELECT latitud, longitud FROM circuitos WHERE {filtro} AND timestamp >= ? AND nombre_zona != ?",
+            (zona, *celdas, texto_hora(restar_horas=HORAS_MAPA), PENDIENTE)).fetchall()
         if not any(distancia_km(data.latitud, data.longitud, f["latitud"], f["longitud"]) <= KM_CONFIRMACION
                    for f in filas):
             raise HTTPException(status_code=404, detail="Ese sector no tiene reportes activos cerca.")
         conn.execute("""
-            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen)
-            VALUES ('web', ?, ?, ?, ?, ?, ?, 'confirmacion')
-        """, (data.latitud, data.longitud, zona, zona, tiene_luz, texto_hora()))
+            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen, celda)
+            VALUES ('web', ?, ?, ?, ?, ?, ?, 'confirmacion', ?)
+        """, (data.latitud, data.longitud, zona, zona, tiene_luz, texto_hora(), celda_de(data.latitud, data.longitud)))
     return {"status": "success", "zona": zona.upper(), "tiene_luz": tiene_luz}
 
 
@@ -342,10 +492,17 @@ def resumen_zona(conn, zona, momento=None):
     momento = momento or ahora()
     hoy = momento.replace(hour=0, minute=0, second=0, microsecond=0)
     hace_7 = momento - timedelta(days=7)
-    filas = conn.execute("""
+    # Un sector son las celdas que cubre su nombre popular (todas sus variantes cuentan). Si el nombre
+    # todavia no tiene celdas (reportes sin ubicacion), se busca por el texto tal cual.
+    celdas = celdas_de_alias(conn, zona)
+    if celdas:
+        filtro, valores = f"(celda IN ({','.join('?' * len(celdas))}) OR zona = ?)", [*celdas, zona]
+    else:
+        filtro, valores = "zona = ?", [zona]
+    filas = conn.execute(f"""
         SELECT timestamp, tiene_luz FROM circuitos
-        WHERE zona = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp
-    """, (zona, hace_7.strftime(FORMATO), momento.strftime(FORMATO))).fetchall()
+        WHERE {filtro} AND nombre_zona != ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp
+    """, (*valores, PENDIENTE, hace_7.strftime(FORMATO), momento.strftime(FORMATO))).fetchall()
     cortes = episodios(filas, momento)
     duraciones = [(f - i).total_seconds() / 3600 for i, f, tipo in cortes if tipo == "medido"]
     promedio = round(sum(duraciones) / len(duraciones), 1) if duraciones else None
@@ -457,7 +614,7 @@ async def mapa_activos():
     se ve solo lo segundo."""
     with closing(conectar()) as conn:
         filas = conn.execute("""
-            SELECT id, telefono, zona, nombre_zona, latitud, longitud, tiene_luz, timestamp FROM circuitos
+            SELECT id, telefono, zona, nombre_zona, latitud, longitud, tiene_luz, timestamp, celda FROM circuitos
             WHERE timestamp >= ? AND nombre_zona != ? ORDER BY timestamp DESC
         """, (texto_hora(restar_horas=HORAS_MAPA), PENDIENTE)).fetchall()
         vistos, salida, resumenes = set(), [], {}
@@ -466,7 +623,7 @@ async def mapa_activos():
                 if f["telefono"] in vistos:
                     continue
                 vistos.add(f["telefono"])
-            zona = f["zona"] or zona_de(f["nombre_zona"])
+            zona = nombre_para_mostrar(conn, f["zona"] or zona_de(f["nombre_zona"]), f["celda"])
             if zona and zona not in resumenes:
                 resumenes[zona] = resumen_zona(conn, zona)
             r = resumenes.get(zona)
@@ -494,6 +651,22 @@ def hora_estimada_mapa(r, inicio_reporte):
     else:   # reporte sin sector (o sin corte abierto en su sector): desde la hora del propio reporte
         base = hora_legible(inicio_reporte + timedelta(hours=HORAS_CORTE))
     return f"{base} (aprox., promedio general de {HORAS_CORTE} h)"
+
+
+# 7. Un nombre popular y las celdas que cubre (lo usaran la busqueda tolerante y el reporte por texto)
+@app.get("/api/sectores")
+async def sector(nombre: str):
+    limpio = limpiar_alias(nombre)
+    with closing(conectar()) as conn:
+        filas = conn.execute("SELECT celda, votos FROM alias WHERE nombre = ? ORDER BY votos DESC",
+                             (limpio,)).fetchall()
+        cubre = set(celdas_de_alias(conn, limpio))
+        celdas = []
+        for f in filas:
+            lat, lon = centro_celda(f["celda"])
+            celdas.append({"id": f["celda"], "lat": lat, "lon": lon, "votos": f["votos"],
+                           "cubre": f["celda"] in cubre, "nombre_mas_votado": nombre_de_celda(conn, f["celda"], False)})
+    return {"nombre": limpio, "conocido": bool(celdas), "celdas": celdas}
 
 
 @app.get("/api/salud")

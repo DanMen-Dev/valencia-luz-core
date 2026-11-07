@@ -13,7 +13,7 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Parte | Estado |
 |---|---|
 | Mapa web y reporte desde el navegador | En producción |
-| Backend (API, estimaciones, respaldo diario) | En producción, 41 pruebas automáticas |
+| Backend (API, estimaciones, respaldo diario) | En producción, 54 pruebas automáticas |
 | Bot de Telegram [@RadarCortesBot](https://t.me/RadarCortesBot) (n8n) | En producción, gratis |
 | Canal de WhatsApp (n8n + Chatwoot) | Listo, sin número conectado: los mensajes del bot se cobran por mensaje |
 | Frontend en React + TypeScript (Vite) | En producción, 50 pruebas con Vitest y Testing Library |
@@ -53,6 +53,18 @@ Saludos, ubicaciones y respuestas de sector se resuelven con reglas en un nodo d
 La app de React tiene dos botones ("No hay luz donde estoy" / "Ya volvió la luz donde estoy") que usan la ubicación del navegador. El reporte toma el nombre del sector reportado más cercano (a 1,5 km o menos). El mapa se actualiza cada minuto y agrupa los reportes cercanos del mismo sector en un solo círculo, con el número de vecinos y cuántos tienen o no luz.
 
 **"Yo también":** en la ventanita de cada grupo, un toque confirma el corte ("Yo también estoy sin luz") o lo contradice ("Aquí ya volvió"), sin pedir ubicación. Solo suma a sectores que ya tienen reportes activos a menos de 2 km; no puede crear sectores nuevos, y comparte el tope por conexión con los reportes web.
+
+### Celdas y nombres populares
+
+El mapa está dividido en **celdas** fijas de 0,01° (unos 1,1 km × 1,1 km en Venezuela, el tamaño de un sector). Su id sale de las coordenadas redondeadas hacia abajo (`10.21_-68.02`), así que el mismo lugar da siempre la misma celda.
+
+Cada vez que un vecino manda su ubicación y escribe su sector, ese nombre suma un **voto** en su celda (tabla `alias`). Así "Prebo", "Urb. Prebo" y "Prevo" quedan amarrados al mismo lugar, sin depender de cómo lo escriba cada uno:
+
+- en el mapa, una variante minoritaria se muestra con el nombre más votado de su celda; un sector de borde con peso propio (30 % o más de los votos) conserva su nombre;
+- un reporte desde la web toma el nombre de su celda o de sus vecinas;
+- el resumen de un sector suma los reportes de todas las celdas que cubre su nombre.
+
+Los reportes se guardan para siempre (tabla `circuitos`, cada fila es un reporte con su celda): son la base para predecir.
 
 ### Qué calcula el backend (y qué no)
 
