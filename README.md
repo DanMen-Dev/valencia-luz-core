@@ -4,7 +4,7 @@
 
 **Mapa en vivo:** https://radar.brecha-cero.com/mapa
 
-Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan desde la web o por WhatsApp ("no hay luz aquí" / "ya volvió"), el mapa muestra los reportes de las últimas 12 horas y un bot responde cómo está un sector con datos reales: desde qué hora no hay luz, cuánto han durado los cortes de la semana y, si hay datos suficientes, una hora estimada de retorno.
+Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan desde la web o por WhatsApp ("no hay luz aquí" / "ya volvió"), el mapa muestra los cortes activos (un corte sin noticias vence a las 6 horas) y un bot responde cómo está un sector con datos reales: desde qué hora no hay luz, cuánto han durado los cortes de la semana y, si hay datos suficientes, una hora estimada de retorno.
 
 > *English summary:* community-sourced power-outage map for Venezuela. FastAPI + SQLite backend, React + TypeScript map (Vite, react-leaflet) served by a Node/Express gateway, and an n8n WhatsApp flow that routes messages with rules and uses a single LLM call (zone extraction). Self-hosted with Docker Compose behind nginx on a Hetzner VPS.
 
@@ -13,9 +13,9 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Parte | Estado |
 |---|---|
 | Mapa web y reporte desde el navegador | En producción |
-| Backend (API, estimaciones, respaldo diario) | En producción, 34 pruebas automáticas |
+| Backend (API, estimaciones, respaldo diario) | En producción, 41 pruebas automáticas |
 | Bot de WhatsApp (n8n + Chatwoot) | Probado de punta a punta con eventos simulados; falta conectar un número de WhatsApp |
-| Frontend en React + TypeScript (Vite) | En producción, 38 pruebas con Vitest y Testing Library |
+| Frontend en React + TypeScript (Vite) | En producción, 40 pruebas con Vitest y Testing Library |
 
 No es información oficial de Corpoelec: todo sale de lo que reportan los vecinos.
 
@@ -53,7 +53,8 @@ Para cada sector, con los reportes de los últimos 7 días:
 
 - **Corte:** un episodio que empieza con un reporte "sin luz" y termina con el primer "volvió la luz" posterior.
 - **Duración promedio:** el promedio de los cortes que sí terminaron.
-- **Retorno estimado:** inicio del corte de hoy + duración promedio. **Solo se da si hay cortes medidos**; si no, el bot lo dice.
+- **Vencimiento:** un corte sin noticias (ni un "sin luz" nuevo ni un "volvió") se da por terminado a las 6 horas, el promedio general de un corte, y sale del mapa. Un "volvió la luz" antes lo cierra; un "sin luz" después abre otro ciclo. Los cortes vencidos no entran en los promedios porque no se sabe cuánto duraron.
+- **Retorno estimado:** inicio del corte de hoy + duración promedio del sector. Si el sector aún no tiene cortes medidos, se usa el promedio general (6 h) y se dice así: "aprox. 6:00 PM (promedio general de 6 h)".
 - **Probabilidad de corte:** días con al menos un corte ÷ 7.
 
 Es estadística simple y transparente, no un modelo predictivo. Un modelo de verdad necesita más historia de la que hay hoy.
@@ -124,7 +125,7 @@ bash n8n/probar_conector.sh
 |---|---|---|
 | `VL_WHATSAPP` | Número del bot para el botón del mapa (solo dígitos); vacío lo oculta | vacío |
 | `VL_DB_PATH` | Ruta de la base SQLite | `/app/datos/valencia_luz_persistente.db` |
-| `VL_HORAS_MAPA` | Horas que un reporte se ve en el mapa | 12 |
+| `VL_HORAS_CORTE` | Un corte sin noticias vence (y sale del mapa) a estas horas; también es el promedio general para estimar | 6 |
 | `VL_REPORTES_POR_HORA` | Tope por teléfono | 6 |
 | `VL_MINUTOS_ESPERA_NOMBRE` | Tiempo para responder el sector | 10 |
 | `VL_REPORTES_WEB_POR_HORA` | Tope de reportes web por conexión | 10 |

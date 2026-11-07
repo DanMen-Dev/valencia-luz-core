@@ -25,6 +25,7 @@ h1 { margin: 0; font-size: 22px; color: var(--acento); font-weight: 800; }
 .punto { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 .punto.gris { background: var(--gris); } .punto.amarillo { background: var(--amarillo); }
 .estado { margin: 8px 0 0; color: var(--suave); }
+.leyenda .nota { margin: 6px 0 0; color: var(--suave); font-size: 11px; line-height: 1.4; }
 .leaflet-popup-content-wrapper { background: var(--panel); color: var(--texto); border: 1px solid var(--acento); border-radius: 8px; }
 .leaflet-popup-tip { background: var(--acento); }
 .pop { min-width: 180px; font-size: 13px; line-height: 1.5; }

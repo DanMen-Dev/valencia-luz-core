@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { confirmarSector, enVenezuela, enviarReporte, obtenerReportes } from './api';
+import { confirmarSector, enVenezuela, enviarReporte, obtenerConfig, obtenerReportes } from './api';
 import { reporte, respuesta } from '../test/datos';
 
 describe('enVenezuela', () => {
@@ -54,5 +54,19 @@ describe('confirmarSector', () => {
   it('pasa el mensaje de error del gateway', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ error: 'Ese sector ya no tiene reportes activos.' }, 404)));
     await expect(confirmarSector('prebo', 10.21, -68.0, 0)).rejects.toThrow('Ese sector ya no tiene reportes activos.');
+  });
+});
+
+describe('obtenerConfig', () => {
+  it('lee el numero de WhatsApp y las horas de vencimiento', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ whatsapp: '584141234567', horas: 4 })));
+    expect(await obtenerConfig()).toEqual({ whatsapp: '584141234567', horas: 4 });
+  });
+
+  it('usa 6 horas si el gateway no las manda o falla', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({ whatsapp: '' })));
+    expect((await obtenerConfig()).horas).toBe(6);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respuesta({}, 502)));
+    expect(await obtenerConfig()).toEqual({ whatsapp: '', horas: 6 });
   });
 });

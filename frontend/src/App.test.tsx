@@ -11,7 +11,7 @@ vi.mock('./components/MapaReportes', () => ({
 
 function rutas(reportar: Response) {
   return vi.fn((url: string) => {
-    if (url === '/api/v1/config') return Promise.resolve(respuesta({ whatsapp: '' }));
+    if (url === '/api/v1/config') return Promise.resolve(respuesta({ whatsapp: '', horas: 4 }));
     if (url === '/api/v1/mapa/circuitos') return Promise.resolve(respuesta([]));
     if (url === '/api/v1/reportar') return Promise.resolve(reportar);
     return Promise.reject(new Error('ruta inesperada ' + url));
@@ -32,7 +32,7 @@ describe('App', () => {
     const fetchMock = rutas(respuesta({ status: 'success', circuito_asignado: 'PREBO', tiene_luz: 0 }));
     vi.stubGlobal('fetch', fetchMock);
     render(<App />);
-    await screen.findByText(/Sin reportes en las últimas 12 horas/);
+    await screen.findByText(/Sin reportes en las últimas 4 horas/);
     await userEvent.click(screen.getByRole('button', { name: /No hay luz/ }));
     expect(await screen.findByText('Gracias: tu reporte de corte en PREBO ya está en el mapa.')).toBeInTheDocument();
     await waitFor(() =>

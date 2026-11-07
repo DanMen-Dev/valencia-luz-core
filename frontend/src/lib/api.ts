@@ -1,5 +1,7 @@
 import type { Config, Reporte, RespuestaConfirmacion, RespuestaReporte } from '../types';
 
+export const HORAS_POR_DEFECTO = 6;
+
 // Limites aproximados de Venezuela: el backend aplica los mismos al guardar
 const VENEZUELA = { latMin: 0.5, latMax: 12.6, lonMin: -73.5, lonMax: -59.5 };
 
@@ -19,8 +21,9 @@ export async function obtenerReportes(senal?: AbortSignal): Promise<Reporte[]> {
 
 export async function obtenerConfig(): Promise<Config> {
   const r = await fetch('/api/v1/config');
-  if (!r.ok) return { whatsapp: '' };
-  return (await r.json()) as Config;
+  if (!r.ok) return { whatsapp: '', horas: HORAS_POR_DEFECTO };
+  const c = (await r.json()) as Partial<Config>;
+  return { whatsapp: c.whatsapp || '', horas: Number(c.horas) > 0 ? Number(c.horas) : HORAS_POR_DEFECTO };
 }
 
 export async function enviarReporte(latitud: number, longitud: number, tieneLuz: 0 | 1): Promise<RespuestaReporte> {

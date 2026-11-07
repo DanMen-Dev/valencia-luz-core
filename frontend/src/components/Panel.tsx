@@ -6,20 +6,21 @@ interface Props {
   error: boolean;
   actualizado: Date | null;
   whatsapp: string;
+  horas: number;
   aviso: Aviso;
   enviando: boolean;
   onReportar: (tieneLuz: 0 | 1) => void;
 }
 
-function resumen({ reportes, cargando, error, actualizado }: Pick<Props, 'reportes' | 'cargando' | 'error' | 'actualizado'>) {
+function resumen({ reportes, cargando, error, actualizado, horas }: Pick<Props, 'reportes' | 'cargando' | 'error' | 'actualizado' | 'horas'>) {
   if (cargando) return 'Cargando reportes…';
   if (error) return 'No se pudieron cargar los reportes. Reintentando…';
   const hora = actualizado?.toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' }) ?? '';
   const sin = reportes.filter(r => r.tiene_luz === 0).length;
   const con = reportes.length - sin;
   return reportes.length === 0
-    ? `Sin reportes en las últimas 12 horas · actualizado ${hora}`
-    : `${sin} sin luz · ${con} con luz (últimas 12 h) · actualizado ${hora}`;
+    ? `Sin reportes en las últimas ${horas} horas · actualizado ${hora}`
+    : `${sin} sin luz · ${con} con luz (últimas ${horas} h) · actualizado ${hora}`;
 }
 
 export function Panel(props: Props) {
@@ -50,6 +51,7 @@ export function Panel(props: Props) {
       <section className="leyenda" aria-label="Leyenda">
         <div className="item"><span className="punto gris" /> Sin luz (reporte de un vecino)</div>
         <div className="item"><span className="punto amarillo" /> Volvió la luz</div>
+        <p className="nota">Un corte sin noticias sale del mapa a las {props.horas} h: se asume que volvió.</p>
         <p className="estado">{resumen(props)}</p>
       </section>
     </aside>

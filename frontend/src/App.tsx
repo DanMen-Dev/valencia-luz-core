@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapaReportes, type Foco } from './components/MapaReportes';
 import { Panel } from './components/Panel';
 import { useReportes } from './hooks/useReportes';
-import { confirmarSector, enVenezuela, enviarReporte, obtenerConfig, ubicacionActual } from './lib/api';
+import { HORAS_POR_DEFECTO, confirmarSector, enVenezuela, enviarReporte, obtenerConfig, ubicacionActual } from './lib/api';
 import type { Grupo } from './lib/agrupar';
 import type { Aviso } from './types';
 
@@ -16,12 +16,13 @@ function focoInicial(): Foco | null {
 export default function App() {
   const estado = useReportes();
   const [whatsapp, setWhatsapp] = useState('');
+  const [horas, setHoras] = useState(HORAS_POR_DEFECTO);
   const [aviso, setAviso] = useState<Aviso>(null);
   const [enviando, setEnviando] = useState(false);
   const [foco, setFoco] = useState<Foco | null>(focoInicial);
 
   useEffect(() => {
-    obtenerConfig().then(c => setWhatsapp(c.whatsapp || '')).catch(() => {});
+    obtenerConfig().then(c => { setWhatsapp(c.whatsapp); setHoras(c.horas); }).catch(() => {});
   }, []);
 
   async function reportar(tieneLuz: 0 | 1) {
@@ -53,7 +54,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Panel {...estado} whatsapp={whatsapp} aviso={aviso} enviando={enviando} onReportar={reportar} />
+      <Panel {...estado} whatsapp={whatsapp} horas={horas} aviso={aviso} enviando={enviando} onReportar={reportar} />
       <main className="contenedor-mapa">
         <MapaReportes reportes={estado.reportes} foco={foco} onConfirmar={confirmar} />
       </main>

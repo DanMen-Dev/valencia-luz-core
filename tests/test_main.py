@@ -148,9 +148,15 @@ def test_en_el_mapa_cuenta_el_ultimo_reporte_de_cada_telefono(app_mod, cliente):
     assert len(mapa) == 1 and mapa[0]["capa_color"] == "amarillo"
 
 
-def test_el_mapa_no_inventa_el_retorno(app_mod, cliente):
+def test_el_mapa_dice_de_donde_sale_el_retorno(app_mod, cliente):
     insertar(app_mod, "prebo", 0, app_mod.ahora() - timedelta(hours=1))
-    assert cliente.get("/api/mapa/activos").json()[0]["hora_estimada"] == "Sin estimación (faltan datos)"
+    estimado = cliente.get("/api/mapa/activos").json()[0]["hora_estimada"]
+    assert estimado.endswith(f"(aprox., promedio general de {app_mod.HORAS_CORTE} h)")
+
+
+def test_un_corte_sin_noticias_vence_y_sale_del_mapa(app_mod, cliente):
+    insertar(app_mod, "prebo", 0, app_mod.ahora() - timedelta(hours=app_mod.HORAS_CORTE, minutes=10))
+    assert cliente.get("/api/mapa/activos").json() == []
 
 
 def test_yo_tambien_suma_un_reporte_al_sector(app_mod, cliente):
@@ -219,6 +225,47 @@ def test_resumen_zona(app_mod):
     assert r["dias_con_corte_7_dias"] == 3
     msg = app_mod.mensaje_zona(r)
     assert "sin luz" in msg and "5:00 PM" in msg and "2 cortes medidos" in msg
+
+
+def test_sin_cortes_medidos_usa_el_promedio_general_y_lo_dice(app_mod):
+    import sqlite3 as s
+    base = app_mod.ahora().replace(hour=12, minute=0, second=0, microsecond=0)
+    insertar(app_mod, "guaparo", 0, base)
+    conn = s.connect(app_mod.DB_PATH)
+    conn.row_factory = s.Row
+    r = app_mod.resumen_zona(conn, "guaparo", momento=base + timedelta(hours=1))
+    assert r["retorno_fuente"] == "promedio_general"
+    assert r["retorno_estimado"] == app_mod.hora_legible(base + timedelta(hours=app_mod.HORAS_CORTE))
+    assert "promedio general" in app_mod.mensaje_zona(r)
+    vencido = app_mod.resumen_zona(conn, "guaparo", momento=base + timedelta(hours=app_mod.HORAS_CORTE + 1))
+    assert vencido["estado"] == "sin_reportes" and vencido["retorno_estimado"] is None
+
+
+def test_volvio_la_luz_cierra_el_corte_y_un_nuevo_corte_reinicia_el_ciclo(app_mod):
+    import sqlite3 as s
+    base = app_mod.ahora().replace(hour=8, minute=0, second=0, microsecond=0)
+    insertar(app_mod, "prebo", 0, base, tel="58414001")
+    insertar(app_mod, "prebo", 1, base + timedelta(hours=3), tel="58414001")
+    insertar(app_mod, "prebo", 0, base + timedelta(hours=5), tel="58414002")
+    conn = s.connect(app_mod.DB_PATH)
+    conn.row_factory = s.Row
+    r = app_mod.resumen_zona(conn, "prebo", momento=base + timedelta(hours=6))
+    assert r["cortes_hoy"] == 2 and r["duracion_promedio_horas"] == 3.0
+    assert r["inicio_corte_hoy"] == app_mod.hora_legible(base + timedelta(hours=5))
+    assert r["retorno_fuente"] == "promedio_sector"
+
+
+@pytest.mark.parametrize("serie, tipos", [
+    ([(0, 0), (7, 0)], ["vencido", "abierto"]),     # 7 h sin noticias: el primero vencio
+    ([(0, 0), (4, 0), (9, 0)], ["abierto"]),        # un 'sin luz' a las 4 h renueva el plazo
+    ([(0, 0), (7, 1)], ["medido"]),                 # 'volvio' algo tarde: todavia mide
+    ([(0, 0), (13, 1)], ["vencido"]),               # 'volvio' muy tarde: no mide nada
+])
+def test_episodios_con_vencimiento(app_mod, serie, tipos):
+    base = app_mod.ahora().replace(hour=6, minute=0, second=0, microsecond=0)
+    filas = [{"timestamp": app_mod.texto_hora(base + timedelta(hours=h)), "tiene_luz": luz} for h, luz in serie]
+    cortes = app_mod.episodios(filas, momento=base + timedelta(hours=serie[-1][0] + 1), horas_corte=6)
+    assert [c[2] for c in cortes] == tipos
 
 
 def test_historico_conserva_los_campos_que_lee_n8n(cliente):

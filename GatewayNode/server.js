@@ -7,6 +7,7 @@ const PORT = Number(process.env.PORT || 5000);
 const BACKEND = process.env.VL_BACKEND_URL || 'http://motor-python:8000';
 const WHATSAPP = String(process.env.VL_WHATSAPP || '').replace(/\D/g, '');
 const REPORTES_WEB_POR_HORA = Number(process.env.VL_REPORTES_WEB_POR_HORA || 10);
+const HORAS_CORTE = Number(process.env.VL_HORAS_CORTE || 6);
 
 const app = express();
 app.disable('x-powered-by');
@@ -45,7 +46,7 @@ app.get('/', (req, res) => res.redirect('/mapa'));
 app.get('/mapa', (req, res) => res.set('Cache-Control', 'no-cache').sendFile(path.join(PUBLICO, 'index.html')));
 app.get('/salud', (req, res) => res.json({ status: 'online', modulo: 'Gateway del mapa de Radar' }));
 
-app.get('/api/v1/config', (req, res) => res.json({ whatsapp: WHATSAPP }));
+app.get('/api/v1/config', (req, res) => res.json({ whatsapp: WHATSAPP, horas: HORAS_CORTE }));
 
 app.get('/api/v1/mapa/circuitos', async (req, res) => {
   try {

@@ -13,6 +13,7 @@ export interface Reporte {
 
 export interface Config {
   whatsapp: string;
+  horas: number;   // un corte sin noticias vence a estas horas (VL_HORAS_CORTE)
 }
 
 export interface RespuestaReporte {

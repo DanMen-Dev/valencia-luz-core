@@ -29,7 +29,10 @@ FORMATO = "%Y-%m-%d %H:%M:%S"
 PENDIENTE = "pendiente de asignacion"
 
 MINUTOS_ESPERA_NOMBRE = int(os.environ.get("VL_MINUTOS_ESPERA_NOMBRE", "10"))  # con mala señal, 3 era poco
-HORAS_MAPA = int(os.environ.get("VL_HORAS_MAPA", "12"))            # cuanto tiempo se ve un reporte en el mapa
+# Un corte sin noticias se da por terminado a las HORAS_CORTE horas (promedio general de un corte). Un "volvio la
+# luz" antes lo cierra; un "sin luz" nuevo despues abre otro ciclo. Tambien es lo que dura un reporte en el mapa.
+HORAS_CORTE = int(os.environ.get("VL_HORAS_CORTE", "6"))
+HORAS_MAPA = int(os.environ.get("VL_HORAS_MAPA", str(HORAS_CORTE)))
 REPORTES_POR_HORA = int(os.environ.get("VL_REPORTES_POR_HORA", "6"))  # tope por telefono (frena el spam)
 KM_ZONA_CERCANA = 1.5                                               # reporte web sin zona: toma la mas cercana
 # Venezuela, aprox.: se rechazan coordenadas que no pueden ser un reporte real
@@ -305,19 +308,33 @@ async def confirmar(data: Confirmacion):
 
 # ---------- Estadisticas por zona ----------------------------------------------------
 
-def episodios(filas):
-    """De una serie de reportes ordenados (timestamp, tiene_luz) saca los cortes: [(inicio, fin|None)].
-    Un corte empieza con el primer 'sin luz' y termina con el primer 'con luz' posterior."""
-    cortes, inicio = [], None
+def episodios(filas, momento=None, horas_corte=None):
+    """De una serie de reportes ordenados (timestamp, tiene_luz) saca los cortes: [(inicio, fin, tipo)].
+
+    - 'medido': empezo con un 'sin luz' y lo cerro un 'con luz' (fin = hora de ese reporte).
+    - 'vencido': paso mas de horas_corte sin noticias (ningun 'sin luz' nuevo ni 'con luz'); se asume que
+      volvio la luz, pero no sabemos cuando: fin = None y no entra en los promedios.
+    - 'abierto': sigue sin luz y todavia no vence.
+    Un 'con luz' que llega mucho despues (mas de 2 x horas_corte sin noticias) no mide nada: el corte ya habia
+    vencido y esa duracion no seria confiable."""
+    horas_corte = horas_corte or HORAS_CORTE
+    vence = timedelta(hours=horas_corte)
+    cortes, inicio, ultima = [], None, None
     for f in filas:
         t = datetime.strptime(f["timestamp"], FORMATO)
-        if f["tiene_luz"] == 0 and inicio is None:
-            inicio = t
-        elif f["tiene_luz"] == 1 and inicio is not None:
-            cortes.append((inicio, t))
-            inicio = None
+        if inicio is not None and f["tiene_luz"] == 1:
+            cortes.append((inicio, t, "medido") if t - ultima <= 2 * vence else (inicio, None, "vencido"))
+            inicio = ultima = None
+        elif f["tiene_luz"] == 0:
+            if inicio is not None and t - ultima > vence:
+                cortes.append((inicio, None, "vencido"))
+                inicio = None
+            if inicio is None:
+                inicio = t
+            ultima = t
     if inicio is not None:
-        cortes.append((inicio, None))
+        vencido = momento is not None and momento - ultima > vence
+        cortes.append((inicio, None, "vencido" if vencido else "abierto"))
     return cortes
 
 
@@ -329,12 +346,11 @@ def resumen_zona(conn, zona, momento=None):
         SELECT timestamp, tiene_luz FROM circuitos
         WHERE zona = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp
     """, (zona, hace_7.strftime(FORMATO), momento.strftime(FORMATO))).fetchall()
-    cortes = episodios(filas)
-    terminados = [(i, f) for i, f in cortes if f is not None]
-    duraciones = [(f - i).total_seconds() / 3600 for i, f in terminados]
+    cortes = episodios(filas, momento)
+    duraciones = [(f - i).total_seconds() / 3600 for i, f, tipo in cortes if tipo == "medido"]
     promedio = round(sum(duraciones) / len(duraciones), 1) if duraciones else None
-    dias_con_corte = len({i.date() for i, _ in cortes})
-    de_hoy = [(i, f) for i, f in cortes if i >= hoy]
+    dias_con_corte = len({i.date() for i, _, _ in cortes})
+    de_hoy = [c for c in cortes if c[0] >= hoy]
     ultimo = filas[-1] if filas else None
     if ultimo is None or datetime.strptime(ultimo["timestamp"], FORMATO) < momento - timedelta(hours=HORAS_MAPA):
         estado = "sin_reportes"
@@ -342,9 +358,14 @@ def resumen_zona(conn, zona, momento=None):
         estado = "con_luz" if ultimo["tiene_luz"] == 1 else "sin_luz"
 
     corte_hoy = de_hoy[-1] if de_hoy else None
-    retorno_estimado = None
-    if corte_hoy and corte_hoy[1] is None and promedio:
-        retorno_estimado = corte_hoy[0] + timedelta(hours=promedio)
+    # Retorno estimado solo para un corte abierto: con el promedio del sector si hay cortes medidos; si no, con
+    # el promedio general (HORAS_CORTE), y se dice cual se uso. Nunca una hora sin explicar de donde sale.
+    retorno_estimado, retorno_fuente = None, None
+    if corte_hoy and corte_hoy[2] == "abierto":
+        if promedio:
+            retorno_estimado, retorno_fuente = corte_hoy[0] + timedelta(hours=promedio), "promedio_sector"
+        else:
+            retorno_estimado, retorno_fuente = corte_hoy[0] + timedelta(hours=HORAS_CORTE), "promedio_general"
     return {
         "zona": zona,
         "estado": estado,
@@ -353,6 +374,8 @@ def resumen_zona(conn, zona, momento=None):
         "inicio_corte_hoy": hora_legible(corte_hoy[0]) if corte_hoy else None,
         "fin_corte_hoy": hora_legible(corte_hoy[1]) if corte_hoy and corte_hoy[1] else None,
         "retorno_estimado": hora_legible(retorno_estimado) if retorno_estimado else None,
+        "retorno_fuente": retorno_fuente,
+        "horas_corte": HORAS_CORTE,
         "duracion_promedio_horas": promedio,
         "cortes_medidos_7_dias": len(duraciones),
         "dias_con_corte_7_dias": dias_con_corte,
@@ -371,10 +394,13 @@ def mensaje_zona(r):
     if r["estado"] == "sin_luz":
         lineas.append(f"• Ahora: *sin luz* según los reportes (desde las {r['inicio_corte_hoy']})."
                       if r["inicio_corte_hoy"] else "• Ahora: *sin luz* según los reportes.")
-        if r["retorno_estimado"]:
+        if r["retorno_estimado"] and r["retorno_fuente"] == "promedio_sector":
             lineas.append(f"• Retorno estimado: {r['retorno_estimado']} "
                           f"(promedio de {r['duracion_promedio_horas']} h en {r['cortes_medidos_7_dias']} "
                           f"cortes medidos esta semana).")
+        elif r["retorno_estimado"]:
+            lineas.append(f"• Retorno estimado: aprox. {r['retorno_estimado']} (promedio general de "
+                          f"{r['horas_corte']} h; este sector aún no tiene cortes medidos).")
         else:
             lineas.append("• Retorno estimado: aún no hay datos suficientes para estimarlo.")
     elif r["estado"] == "con_luz":
@@ -397,7 +423,7 @@ async def analitica_actual(zona: str):
     with closing(conectar()) as conn:
         n = conn.execute("""
             SELECT COUNT(*) FROM circuitos WHERE zona = ? AND tiene_luz = 0 AND timestamp > ?
-        """, (z, texto_hora(restar_horas=6))).fetchone()[0]
+        """, (z, texto_hora(restar_horas=HORAS_CORTE))).fetchone()[0]
     return {"zona": z, "reportes_sin_luz_activos": n}
 
 
@@ -412,7 +438,9 @@ async def analitica_historica(zona: str):
     return {
         **r,
         "hora_corte": r["inicio_corte_hoy"] or "sin reportes de corte hoy",
-        "hora_retorno": r["fin_corte_hoy"] or r["retorno_estimado"] or "sin datos suficientes para estimarlo",
+        "hora_retorno": r["fin_corte_hoy"] or (
+            (r["retorno_estimado"] if r["retorno_fuente"] == "promedio_sector" else f"aprox. {r['retorno_estimado']}")
+            if r["retorno_estimado"] else "sin datos suficientes para estimarlo"),
         "duracion_promedio": r["duracion_promedio_horas"] if r["duracion_promedio_horas"] is not None
         else "sin datos",
         "reincidencia_detectada": "Sí" if r["cortes_hoy"] > 1 else "No",
@@ -424,8 +452,9 @@ async def analitica_historica(zona: str):
 
 @app.get("/api/mapa/activos")
 async def mapa_activos():
-    """Reportes de las ultimas HORAS_MAPA horas. Por telefono cuenta solo el ultimo reporte: si alguien
-    reporto 'sin luz' y despues 'volvio la luz', se ve solo lo segundo."""
+    """Reportes de las ultimas HORAS_MAPA horas (por defecto HORAS_CORTE: un corte sin noticias vence y sale del
+    mapa). Por telefono cuenta solo el ultimo reporte: si alguien reporto 'sin luz' y despues 'volvio la luz',
+    se ve solo lo segundo."""
     with closing(conectar()) as conn:
         filas = conn.execute("""
             SELECT id, telefono, zona, nombre_zona, latitud, longitud, tiene_luz, timestamp FROM circuitos
@@ -450,15 +479,25 @@ async def mapa_activos():
                 "tiene_luz": f["tiene_luz"],
                 "capa_color": "gris" if f["tiene_luz"] == 0 else "amarillo",
                 "hora_inicio": hora_legible(inicio),
-                "hora_estimada": (r["retorno_estimado"] if r and r["retorno_estimado"] and f["tiene_luz"] == 0
-                                  else "Sin estimación (faltan datos)" if f["tiene_luz"] == 0 else "—"),
+                "hora_estimada": hora_estimada_mapa(r, inicio) if f["tiene_luz"] == 0 else "—",
                 "actualizado": f["timestamp"],
             })
     return salida
+
+
+def hora_estimada_mapa(r, inicio_reporte):
+    """Texto del retorno para el mapa: promedio del sector si lo hay; si no, promedio general, dicho como tal."""
+    if r and r["retorno_estimado"] and r["retorno_fuente"] == "promedio_sector":
+        return r["retorno_estimado"]
+    if r and r["retorno_estimado"]:
+        base = r["retorno_estimado"]
+    else:   # reporte sin sector (o sin corte abierto en su sector): desde la hora del propio reporte
+        base = hora_legible(inicio_reporte + timedelta(hours=HORAS_CORTE))
+    return f"{base} (aprox., promedio general de {HORAS_CORTE} h)"
 
 
 @app.get("/api/salud")
 async def salud():
     with closing(conectar()) as conn:
         n = conn.execute("SELECT COUNT(*) FROM circuitos").fetchone()[0]
-    return {"status": "ok", "reportes": n, "hora_venezuela": texto_hora()}
+    return {"status": "ok", "reportes": n, "hora_venezuela": texto_hora(), "horas_corte": HORAS_CORTE}

@@ -10,6 +10,7 @@ const base = {
   error: false,
   actualizado: new Date(2026, 10, 7, 9, 43),
   whatsapp: '',
+  horas: 6,
   aviso: null,
   enviando: false,
   onReportar: () => {},
@@ -23,7 +24,7 @@ describe('Panel', () => {
 
   it('avisa cuando no hay reportes, cuando carga y cuando falla', () => {
     const { rerender } = render(<Panel {...base} />);
-    expect(screen.getByText(/Sin reportes en las últimas 12 horas/)).toBeInTheDocument();
+    expect(screen.getByText(/Sin reportes en las últimas 6 horas/)).toBeInTheDocument();
     rerender(<Panel {...base} cargando />);
     expect(screen.getByText('Cargando reportes…')).toBeInTheDocument();
     rerender(<Panel {...base} error />);
