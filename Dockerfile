@@ -2,14 +2,15 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# Instala dependencias del sistema mínimas
-RUN apt-get update && apt-get install -y --no-install-recommends gcc build-essential && rm -rf /var/lib/apt/lists/*
+# Dependencias fijadas en requirements.txt (antes se instalaban sin version)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia los archivos de ejecución
 COPY main.py .
 
-# Instala FastAPI y Uvicorn de forma nativa en el contenedor
-RUN pip install --no-cache-dir fastapi uvicorn pydantic
+# La base de datos vive en /app/datos, montada como volumen: sobrevive a un rebuild del contenedor
+ENV VL_DB_PATH=/app/datos/valencia_luz_persistente.db
+RUN mkdir -p /app/datos
 
 EXPOSE 8000
 

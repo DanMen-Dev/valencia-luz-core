@@ -1,0 +1,14 @@
+name: Pruebas
+on:
+  push:
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-dev.txt
+      - run: VL_DB_PATH=/tmp/vl_ci.db python -m pytest -q tests

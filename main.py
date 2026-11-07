@@ -1,256 +1,434 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from datetime import datetime, timedelta
-from typing import Dict, Optional, List
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
-import sqlite3
+"""
+Valencia Luz Core: backend de reportes comunitarios de cortes de luz.
+
+Recibe reportes por WhatsApp (via n8n) y por la web (via el gateway del mapa), los guarda en SQLite
+y responde solo con datos reales: si no hay reportes suficientes, lo dice en vez de inventar horas.
+
+Hora: todo se guarda y se muestra en hora de Venezuela (America/Caracas).
+"""
 import os
+import re
+import sqlite3
+import unicodedata
+from contextlib import closing
+from datetime import datetime, timedelta
+from math import asin, cos, radians, sin, sqrt
+from zoneinfo import ZoneInfo
+
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, field_validator
 
 app = FastAPI(
-    title="Valencia Luz Core - Motor Geoespacial y Predictivo",
-    description="Backend relacional inmutable para la ingesta de telemetría GPS y analítica predictiva de OpenAI"
+    title="Valencia Luz Core",
+    description="Reportes comunitarios de cortes de luz: registro, mapa y estadisticas por zona.",
 )
 
-DB_PATH = "/app/valencia_luz_persistente.db"
+DB_PATH = os.environ.get("VL_DB_PATH", "/app/datos/valencia_luz_persistente.db")
+TZ = ZoneInfo("America/Caracas")
+FORMATO = "%Y-%m-%d %H:%M:%S"
+PENDIENTE = "pendiente de asignacion"
 
-def obtener_tiempo_vzla(restar_horas=0):
-    # Base inmutable: calculamos la hora actual de Venezuela (UTC-4)
-    hora_actual_vzla = datetime.utcnow() - timedelta(hours=4)
-    # Si el filtro nos pide ir al pasado, le restamos las horas dinámicamente
-    return (hora_actual_vzla - timedelta(hours=restar_horas)).strftime('%Y-%m-%d %H:%M:%S')
+MINUTOS_ESPERA_NOMBRE = int(os.environ.get("VL_MINUTOS_ESPERA_NOMBRE", "10"))  # con mala señal, 3 era poco
+HORAS_MAPA = int(os.environ.get("VL_HORAS_MAPA", "12"))            # cuanto tiempo se ve un reporte en el mapa
+REPORTES_POR_HORA = int(os.environ.get("VL_REPORTES_POR_HORA", "6"))  # tope por telefono (frena el spam)
+KM_ZONA_CERCANA = 1.5                                               # reporte web sin zona: toma la mas cercana
+# Venezuela, aprox.: se rechazan coordenadas que no pueden ser un reporte real
+LAT_MIN, LAT_MAX, LON_MIN, LON_MAX = 0.5, 12.6, -73.5, -59.5
+
+
+# ---------- Utilidades ---------------------------------------------------------------
+
+def ahora():
+    return datetime.now(TZ).replace(tzinfo=None)
+
+
+def texto_hora(dt=None, restar_horas=0):
+    return ((dt or ahora()) - timedelta(hours=restar_horas)).strftime(FORMATO)
+
+
+def hora_legible(dt):
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
+def normalizar_telefono(valor):
+    """'+58 414-425 3799' -> '584144253799'. Un '+' en la URL llega como espacio: tambien se limpia."""
+    return re.sub(r"\D", "", str(valor or ""))
+
+
+def normalizar_zona(valor):
+    """'  San Diégo ' -> 'san diego'. Minusculas, sin acentos, sin signos, espacios simples."""
+    t = unicodedata.normalize("NFKD", str(valor or "")).encode("ascii", "ignore").decode()
+    t = re.sub(r"[^a-z0-9 ]+", " ", t.lower())
+    return re.sub(r"\s+", " ", t).strip()
+
+
+RE_YA_HAY_LUZ = re.compile(r"^\s*(si|sí|1|ya|volvio|regreso|llego)\b[\s,.:;-]*", re.IGNORECASE)
+RE_SIN_LUZ = re.compile(r"^\s*(no|0)\b[\s,.:;-]*", re.IGNORECASE)
+
+
+def interpretar_respuesta(texto):
+    """La respuesta al '¿cual es tu sector?': 'Si, Prebo' = volvio la luz en Prebo; 'Prebo' = sin luz.
+    Devuelve (zona_normalizada, tiene_luz)."""
+    t = str(texto or "")
+    if RE_YA_HAY_LUZ.match(t):
+        return normalizar_zona(RE_YA_HAY_LUZ.sub("", t, count=1)), 1
+    if RE_SIN_LUZ.match(t):
+        return normalizar_zona(RE_SIN_LUZ.sub("", t, count=1)), 0
+    return normalizar_zona(t), 0
+
+
+def zona_de(nombre_zona):
+    """Compatibilidad con reportes viejos guardados como 'prebo-Lat:10.2-Lon:-68.0'."""
+    base = str(nombre_zona or "").split("-Lat:")[0]
+    return normalizar_zona(base)
+
+
+def distancia_km(lat1, lon1, lat2, lon2):
+    dlat, dlon = radians(lat2 - lat1), radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 6371 * 2 * asin(sqrt(a))
+
+
+# ---------- Base de datos ------------------------------------------------------------
+
+def conectar():
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS circuitos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telefono TEXT,
-            latitud REAL,
-            longitud REAL,
-            nombre_zona TEXT,
-            tiene_luz INTEGER,
-            timestamp DATETIME
-        )
-    """)
-    conn.commit()
-    conn.close()
+    carpeta = os.path.dirname(DB_PATH)
+    if carpeta:
+        os.makedirs(carpeta, exist_ok=True)
+    with closing(conectar()) as conn, conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS circuitos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telefono TEXT,
+                latitud REAL,
+                longitud REAL,
+                nombre_zona TEXT,
+                tiene_luz INTEGER,
+                timestamp DATETIME
+            )
+        """)
+        columnas = {r["name"] for r in conn.execute("PRAGMA table_info(circuitos)")}
+        if "zona" not in columnas:
+            # Zona normalizada en su propia columna (antes iba mezclada con las coordenadas en nombre_zona)
+            conn.execute("ALTER TABLE circuitos ADD COLUMN zona TEXT")
+            conn.execute("ALTER TABLE circuitos ADD COLUMN origen TEXT DEFAULT 'whatsapp'")
+            for fila in conn.execute("SELECT id, nombre_zona FROM circuitos").fetchall():
+                z = "" if fila["nombre_zona"] == PENDIENTE else zona_de(fila["nombre_zona"])
+                conn.execute("UPDATE circuitos SET zona = ? WHERE id = ?", (z, fila["id"]))
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_circuitos_zona_tiempo ON circuitos (zona, timestamp)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_circuitos_tel_tiempo ON circuitos (telefono, timestamp)")
+        # La conversacion ("esperando el nombre del sector") vive en la base: sobrevive a un reinicio
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversaciones (
+                telefono TEXT PRIMARY KEY,
+                estado TEXT NOT NULL,
+                actualizado DATETIME NOT NULL
+            )
+        """)
+
 
 init_db()
 
-estado_conversacional_usuarios: Dict[str, Dict] = {}
 
-class RegistroGPS(BaseModel):
-    telefono: str
+def zona_cercana(conn, lat, lon):
+    """La zona mas reportada a menos de KM_ZONA_CERCANA en los ultimos 30 dias (para reportes sin zona)."""
+    desde = texto_hora(restar_horas=24 * 30)
+    filas = conn.execute(
+        "SELECT zona, latitud, longitud FROM circuitos WHERE zona != '' AND zona IS NOT NULL AND timestamp >= ?",
+        (desde,)).fetchall()
+    conteo = {}
+    for f in filas:
+        if distancia_km(lat, lon, f["latitud"], f["longitud"]) <= KM_ZONA_CERCANA:
+            conteo[f["zona"]] = conteo.get(f["zona"], 0) + 1
+    return max(conteo, key=conteo.get) if conteo else ""
+
+
+def controlar_frecuencia(conn, telefono):
+    if not telefono or telefono == "web":
+        return
+    n = conn.execute("SELECT COUNT(*) FROM circuitos WHERE telefono = ? AND timestamp >= ?",
+                     (telefono, texto_hora(restar_horas=1))).fetchone()[0]
+    if n >= REPORTES_POR_HORA:
+        raise HTTPException(status_code=429, detail="Demasiados reportes desde este telefono en la ultima hora.")
+
+
+# ---------- Modelos ------------------------------------------------------------------
+
+class Coordenadas(BaseModel):
     latitud: float
     longitud: float
 
-class RegistroNombre(BaseModel):
+    @field_validator("latitud")
+    @classmethod
+    def _lat(cls, v):
+        if not LAT_MIN <= v <= LAT_MAX:
+            raise ValueError("latitud fuera de Venezuela")
+        return v
+
+    @field_validator("longitud")
+    @classmethod
+    def _lon(cls, v):
+        if not LON_MIN <= v <= LON_MAX:
+            raise ValueError("longitud fuera de Venezuela")
+        return v
+
+
+class RegistroGPS(Coordenadas):
     telefono: str
-    nombre_zona: str
 
 
-# 1. Tragar el PIN GPS métrico del satélite (Punto 2 y 3)
+class ReporteWeb(Coordenadas):
+    tiene_luz: int = 0
+    zona: str = ""
+
+
+# ---------- Reportes -----------------------------------------------------------------
+
+# 1. Ubicacion enviada por WhatsApp: queda pendiente hasta que el usuario diga su sector
 @app.post("/api/reportar/gps")
 async def reportar_gps(data: RegistroGPS):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    now = datetime.now()
-    cursor.execute("""
-        INSERT INTO circuitos (nombre_zona, latitud, longitud, tiene_luz, telefono, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, ("pendiente de asignacion", data.latitud, data.longitud, 0, data.telefono, obtener_tiempo_vzla()))
-    conn.commit()
-    conn.close()
+    telefono = normalizar_telefono(data.telefono)
+    if not telefono:
+        raise HTTPException(status_code=422, detail="Falta el telefono.")
+    with closing(conectar()) as conn, conn:
+        controlar_frecuencia(conn, telefono)
+        # Un pendiente anterior sin respuesta se descarta: cuenta el ultimo PIN
+        conn.execute("DELETE FROM circuitos WHERE telefono = ? AND nombre_zona = ?", (telefono, PENDIENTE))
+        conn.execute("""
+            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen)
+            VALUES (?, ?, ?, ?, '', 0, ?, 'whatsapp')
+        """, (telefono, data.latitud, data.longitud, PENDIENTE, texto_hora()))
+        conn.execute("REPLACE INTO conversaciones (telefono, estado, actualizado) VALUES (?, 'esperando', ?)",
+                     (telefono, texto_hora()))
+    return {"status": "success", "message": "Ubicacion recibida. Falta el nombre del sector."}
 
-    estado_conversacional_usuarios[data.telefono] = {
-        "estado": "esperando",
-        "timestamp_gps": now
-    }
-    return {"status": "success", "message": "Coordenadas métricas inyectadas de forma inmutable."}
 
-
-# 2. Validar el estado del contexto conversacional para el IF 3 de n8n
+# 2. ¿Este telefono esta respondiendo con el nombre de su sector? (IF del flujo de n8n)
 @app.get("/api/usuario/esperando-nombre")
 async def verificar_estado_usuario(telefono: str = ""):
-    # Si por error de codificación llega vacío, evitamos el 404 devolviendo un estado neutro
-    if not telefono:
+    tel = normalizar_telefono(telefono)
+    if not tel:
         return {"estado": "libre"}
+    with closing(conectar()) as conn, conn:
+        fila = conn.execute("SELECT estado, actualizado FROM conversaciones WHERE telefono = ?", (tel,)).fetchone()
+        if not fila:
+            return {"estado": "libre"}
+        if datetime.strptime(fila["actualizado"], FORMATO) < ahora() - timedelta(minutes=MINUTOS_ESPERA_NOMBRE):
+            conn.execute("DELETE FROM conversaciones WHERE telefono = ?", (tel,))
+            return {"estado": "libre"}
+        return {"estado": fila["estado"]}
 
-    tel_limpio = telefono.strip()
-    user_state = estado_conversacional_usuarios.get(tel_limpio)
 
-    if not user_state:
-        return {"estado": "libre"}
-
-    if datetime.now() - user_state["timestamp_gps"] > timedelta(minutes=3):
-        estado_conversacional_usuarios.pop(tel_limpio, None)
-        return {"estado": "libre"}
-
-    return {"estado": "esperando"}
-
-# 3. Registrar el nombre de la zona combinándolo dinámicamente con su firma satelital (Paso 3 UX)
+# 3. Nombre del sector: completa el reporte pendiente. Acepta los nombres de campo viejos y nuevos:
+#    n8n manda {telefono, nombre_zona, tiene_luz}; una version anterior usaba {zona, estado_luz}.
 @app.post("/api/reportar/nombre")
-async def reportar_nombre(data: dict):
-    telefono = data.get("telefono")
-    zona_usuario = data.get("zona", "").strip().lower()
+async def reportar_nombre(request: Request):
+    data = await request.json()
+    telefono = normalizar_telefono(data.get("telefono"))
+    texto = data.get("nombre_zona", data.get("zona", ""))
+    zona, tiene_luz = interpretar_respuesta(texto)
+    # El estado sale del texto ("Si, Prebo" = volvio la luz). El tiene_luz que calcula n8n busca "si" en
+    # cualquier parte ("Casiano" daba 1), asi que no se usa; estado_luz explicito (version anterior) si.
+    if str(data.get("estado_luz", "")).strip() in ("0", "1"):
+        tiene_luz = int(data["estado_luz"])
+    if not telefono or not zona:
+        raise HTTPException(status_code=422, detail="Faltan el telefono o el nombre del sector.")
 
-    # Capturar la intención real de la telemetría (1 = Con Luz, 0 = Sin Luz)
-    # Si por alguna razón no viene, aplicamos 0 por defecto (Apagón)
-    estado_luz = int(data.get("estado_luz", 0))
+    with closing(conectar()) as conn, conn:
+        fila = conn.execute("""
+            SELECT id, latitud, longitud FROM circuitos
+            WHERE telefono = ? AND nombre_zona = ? ORDER BY timestamp DESC LIMIT 1
+        """, (telefono, PENDIENTE)).fetchone()
+        if not fila:
+            raise HTTPException(status_code=404, detail="No hay una ubicacion pendiente para este telefono.")
+        conn.execute("UPDATE circuitos SET nombre_zona = ?, zona = ?, tiene_luz = ? WHERE id = ?",
+                     (zona, zona, tiene_luz, fila["id"]))
+        conn.execute("DELETE FROM conversaciones WHERE telefono = ?", (telefono,))
 
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # 3.1. Recuperar el PIN GPS latente guardado en la memoria por el satélite
-    cursor.execute("""
-        SELECT latitud, longitud FROM circuitos
-        WHERE telefono = ? AND nombre_zona = 'pendiente de asignacion'
-        ORDER BY timestamp DESC LIMIT 1
-    """, (telefono,))
-    fila_gps = cursor.fetchone()
-
-    if not fila_gps:
-        conn.close()
-        raise HTTPException(status_code=404, detail="No se encontró telemetría GPS activa en espera.")
-
-    lat, lon = fila_gps[0], fila_gps[1]
-
-    # 3.2. Ensamblar la Nomenclatura Relacional Inmutable de Daniel Mendoza
-    nombre_combinado_enterprise = f"{zona_usuario}-Lat:{round(lat, 4)}-Lon:{round(lon, 4)}"
-
-    # 3.3 Guardar el estado real reportado. Leaflet omitirá pintar en gris si es 1.
-    cursor.execute("""
-        UPDATE circuitos
-        SET nombre_zona = ?, tiene_luz = ?
-        WHERE telefono = ? AND nombre_zona = 'pendiente de asignacion'
-    """, (nombre_combinado_enterprise, estado_luz, telefono))
-
-    conn.commit()
-    conn.close()
-    
     return {
         "status": "success",
-        "circuito_registrado": nombre_combinado_enterprise,
-        "tiene_luz_registrado": estado_luz
+        "zona": zona,
+        "tiene_luz": tiene_luz,
+        "circuito_registrado": zona,              # compatibilidad con la respuesta anterior
+        "tiene_luz_registrado": tiene_luz,
     }
 
 
-#4 Generacion de Mapa
-@app.get("/api/mapa/activos")
-async def mapa_activos():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+# 3b. Reporte desde el boton del mapa web (sin telefono): toma la zona mas cercana conocida
+@app.post("/api/reportar")
+async def reportar_web(data: ReporteWeb):
+    with closing(conectar()) as conn, conn:
+        zona = normalizar_zona(data.zona) or zona_cercana(conn, data.latitud, data.longitud)
+        tiene_luz = 1 if data.tiene_luz == 1 else 0
+        conn.execute("""
+            INSERT INTO circuitos (telefono, latitud, longitud, nombre_zona, zona, tiene_luz, timestamp, origen)
+            VALUES ('web', ?, ?, ?, ?, ?, ?, 'web')
+        """, (data.latitud, data.longitud, zona or "sin zona", zona, tiene_luz, texto_hora()))
+    return {"status": "success", "circuito_asignado": (zona or "sin zona").upper(), "tiene_luz": tiene_luz}
 
-    # Filtrar por los cortes de las últimas 24 horas (Reloj Venezuela)
-    hace_24_h = obtener_tiempo_vzla(restar_horas=24)
 
-    cursor.execute("""
-        SELECT id, nombre_zona, latitud, longitud, tiene_luz, timestamp
-        FROM circuitos
-        WHERE tiene_luz = 0 AND timestamp >= ?
-    """, (hace_24_h,))
-    filas = cursor.fetchall()
-    conn.close()
+# ---------- Estadisticas por zona ----------------------------------------------------
 
-    resultado_mapa=[]
+def episodios(filas):
+    """De una serie de reportes ordenados (timestamp, tiene_luz) saca los cortes: [(inicio, fin|None)].
+    Un corte empieza con el primer 'sin luz' y termina con el primer 'con luz' posterior."""
+    cortes, inicio = [], None
     for f in filas:
-        id_db, zona, latitud, longitud, tiene_luz, timestamp = f
-
-        # Lógica Predictiva de Bloque Corto/Largo:
-        # Si la zona ya tiene reportes o si se calcula la base de 6 horas
-        dt_corte = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-        hora_inicio_str = dt_corte.strftime('%I:%M %p')
-
-        # Duración estándar base de 6 horas ante contingencia nacional
-        dt_retorno = dt_corte + timedelta(hours=6)
-        hora_retorno_str = dt_retorno.strftime('%I:%M %p')
-
-        # 🔌 SANEAMIENTO LOGICO FRONTEND: Si se quedó congelado en la aduana de Docker
-        zona_limpia = zona.strip()
-        if zona_limpia.lower() == "pendiente de asignacion":
-            zona_limpia = "CIRCUITO BAJO INVESTIGACIÓN"
-
-        resultado_mapa.append({
-            "id": id_db,
-            "nombre_zona": zona_limpia,
-            "lat": latitud,
-            "lon": longitud,
-            "capa_color": "gris",
-            "hora_inicio": hora_inicio_str,
-            "hora_estimada": hora_retorno_str,
-            "actualizado": timestamp
-        })
-    return resultado_mapa
+        t = datetime.strptime(f["timestamp"], FORMATO)
+        if f["tiene_luz"] == 0 and inicio is None:
+            inicio = t
+        elif f["tiene_luz"] == 1 and inicio is not None:
+            cortes.append((inicio, t))
+            inicio = None
+    if inicio is not None:
+        cortes.append((inicio, None))
+    return cortes
 
 
+def resumen_zona(conn, zona, momento=None):
+    momento = momento or ahora()
+    hoy = momento.replace(hour=0, minute=0, second=0, microsecond=0)
+    hace_7 = momento - timedelta(days=7)
+    filas = conn.execute("""
+        SELECT timestamp, tiene_luz FROM circuitos
+        WHERE zona = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp
+    """, (zona, hace_7.strftime(FORMATO), momento.strftime(FORMATO))).fetchall()
+    cortes = episodios(filas)
+    terminados = [(i, f) for i, f in cortes if f is not None]
+    duraciones = [(f - i).total_seconds() / 3600 for i, f in terminados]
+    promedio = round(sum(duraciones) / len(duraciones), 1) if duraciones else None
+    dias_con_corte = len({i.date() for i, _ in cortes})
+    de_hoy = [(i, f) for i, f in cortes if i >= hoy]
+    ultimo = filas[-1] if filas else None
+    if ultimo is None or datetime.strptime(ultimo["timestamp"], FORMATO) < momento - timedelta(hours=HORAS_MAPA):
+        estado = "sin_reportes"
+    else:
+        estado = "con_luz" if ultimo["tiene_luz"] == 1 else "sin_luz"
+
+    corte_hoy = de_hoy[-1] if de_hoy else None
+    retorno_estimado = None
+    if corte_hoy and corte_hoy[1] is None and promedio:
+        retorno_estimado = corte_hoy[0] + timedelta(hours=promedio)
+    return {
+        "zona": zona,
+        "estado": estado,
+        "reportes_7_dias": len(filas),
+        "cortes_hoy": len(de_hoy),
+        "inicio_corte_hoy": hora_legible(corte_hoy[0]) if corte_hoy else None,
+        "fin_corte_hoy": hora_legible(corte_hoy[1]) if corte_hoy and corte_hoy[1] else None,
+        "retorno_estimado": hora_legible(retorno_estimado) if retorno_estimado else None,
+        "duracion_promedio_horas": promedio,
+        "cortes_medidos_7_dias": len(duraciones),
+        "dias_con_corte_7_dias": dias_con_corte,
+        "probabilidad_corte_pct": round(dias_con_corte / 7 * 100),
+    }
 
 
+def mensaje_zona(r):
+    """El texto para WhatsApp, armado solo con datos reales."""
+    nombre = r["zona"].upper()
+    if r["reportes_7_dias"] == 0:
+        return (f"💡 *Valencia Luz*: todavía no hay reportes de *{nombre}* en los últimos 7 días.\n"
+                "Si estás ahí, envía tu ubicación 📍 para que tu sector aparezca en el mapa: "
+                "https://luz.brecha-cero.com/mapa")
+    lineas = [f"💡 *Valencia Luz · {nombre}*"]
+    if r["estado"] == "sin_luz":
+        lineas.append(f"• Ahora: *sin luz* según los reportes (desde las {r['inicio_corte_hoy']})."
+                      if r["inicio_corte_hoy"] else "• Ahora: *sin luz* según los reportes.")
+        if r["retorno_estimado"]:
+            lineas.append(f"• Retorno estimado: {r['retorno_estimado']} "
+                          f"(promedio de {r['duracion_promedio_horas']} h en {r['cortes_medidos_7_dias']} "
+                          f"cortes medidos esta semana).")
+        else:
+            lineas.append("• Retorno estimado: aún no hay datos suficientes para estimarlo.")
+    elif r["estado"] == "con_luz":
+        if r["fin_corte_hoy"]:
+            lineas.append(f"• Ahora: *con luz* (volvió a las {r['fin_corte_hoy']}).")
+        else:
+            lineas.append("• Ahora: *con luz* según el último reporte.")
+    else:
+        lineas.append("• No hay reportes recientes de este sector.")
+    lineas.append(f"• Esta semana: cortes en {r['dias_con_corte_7_dias']} de 7 días "
+                  f"({r['probabilidad_corte_pct']} %).")
+    lineas.append("Mapa en vivo: https://luz.brecha-cero.com/mapa")
+    return "\n".join(lineas)
 
-# 5. Consultar estado actual por zonas para la herramienta de OpenAI (Versión JSON Estable)
+
+# 5. Reportes activos de una zona (ultimas horas)
 @app.get("/api/analitica/estado-actual")
 async def analitica_actual(zona: str):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    hace_6_horas = obtener_tiempo_vzla(restar_horas=6)
-    zona_limpia = zona.strip().lower()
-    cursor.execute("""
-        SELECT COUNT(*) FROM circuitos 
-        WHERE nombre_zona = ? AND tiene_luz = 0 AND timestamp > ?
-    """, (zona_limpia, hace_6_horas))
-    reportes_activos = cursor.fetchone()
-    conn.close()
-    return {"zona": zona_limpia, "reportes_sin_luz_activos": reportes_activos[0]}
+    z = normalizar_zona(zona)
+    with closing(conectar()) as conn:
+        n = conn.execute("""
+            SELECT COUNT(*) FROM circuitos WHERE zona = ? AND tiene_luz = 0 AND timestamp > ?
+        """, (z, texto_hora(restar_horas=6))).fetchone()[0]
+    return {"zona": z, "reportes_sin_luz_activos": n}
 
 
-# 6. Calcular analítica horaria predictiva en caliente (La compuerta UX de Daniel)
+# 6. Resumen de una zona para el bot. Mantiene los nombres que lee el flujo de n8n (hora_corte, hora_retorno,
+#    duracion_promedio, reincidencia_detectada) pero con datos reales o un texto que dice que no los hay,
+#    nunca horas inventadas. 'mensaje' trae el texto listo para enviar.
 @app.get("/api/analitica/historico")
 async def analitica_historica(zona: str):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    zona_limpia = zona.strip().lower()
-
-    # 1. Buscar el reporte más reciente de hoy en este sector para calcular la hora de inicio
-    hoy_inicio = datetime.now().strftime('%Y-%m-%d 00:00:00')
-    cursor.execute("""
-        SELECT timestamp FROM circuitos
-        WHERE nombre_zona LIKE ? AND tiene_luz = 0 AND timestamp >= ?
-        ORDER BY timestamp ASC LIMIT 1
-    """, (f"%{zona_limpia}%", hoy_inicio))
-    primer_corte = cursor.fetchone()
-
-    # 2. Contar si hay múltiples reportes hoy en la misma zona para evaluar reincidencia
-    cursor.execute("""
-        SELECT COUNT(*) FROM circuitos
-        WHERE nombre_zona LIKE ? AND tiene_luz = 0 AND timestamp >= ?
-    """, (f"%{zona_limpia}%", hoy_inicio))
-    conteo_cortes_hoy = cursor.fetchone()[0]
-    conn.close()
-
-    # 3. Lógica determinista de proyección horaria
-    hora_corte_str = "11:00 AM aprox."
-    hora_retorno_str = "5:00 PM aprox."
-    duracion_base = 6
-
-    if primer_corte:
-        dt_corte = datetime.strptime(primer_corte[0], '%Y-%m-%d %H:%M:%S')
-        # Ajustar formato estético legible humano
-        hora_corte_str = dt_corte.strftime('%I:%M %p')
-
-        # Aplicar penalización si hay reincidencia del segundo corte del día (+2 horas)
-        if conteo_cortes_hoy > 1:
-            duracion_base += 2
-
-        dt_retorno = dt_corte + timedelta(hours=duracion_base)
-        hora_retorno_str = dt_retorno.strftime('%I:%M %p')
-
+    z = normalizar_zona(zona)
+    with closing(conectar()) as conn:
+        r = resumen_zona(conn, z)
     return {
-        "zona": zona_limpia,
-        "hora_corte": hora_corte_str,
-        "hora_retorno": hora_retorno_str,
-        "duracion_promedio": duracion_base,
-        "reincidencia_detectada": "Sí (+2h castigo)" if conteo_cortes_hoy > 1 else "No"
+        **r,
+        "hora_corte": r["inicio_corte_hoy"] or "sin reportes de corte hoy",
+        "hora_retorno": r["fin_corte_hoy"] or r["retorno_estimado"] or "sin datos suficientes para estimarlo",
+        "duracion_promedio": r["duracion_promedio_horas"] if r["duracion_promedio_horas"] is not None
+        else "sin datos",
+        "reincidencia_detectada": "Sí" if r["cortes_hoy"] > 1 else "No",
+        "mensaje": mensaje_zona(r),
     }
 
 
+# ---------- Mapa ---------------------------------------------------------------------
+
+@app.get("/api/mapa/activos")
+async def mapa_activos():
+    """Reportes de las ultimas HORAS_MAPA horas. Por telefono cuenta solo el ultimo reporte: si alguien
+    reporto 'sin luz' y despues 'volvio la luz', se ve solo lo segundo."""
+    with closing(conectar()) as conn:
+        filas = conn.execute("""
+            SELECT id, telefono, zona, nombre_zona, latitud, longitud, tiene_luz, timestamp FROM circuitos
+            WHERE timestamp >= ? AND nombre_zona != ? ORDER BY timestamp DESC
+        """, (texto_hora(restar_horas=HORAS_MAPA), PENDIENTE)).fetchall()
+        vistos, salida, resumenes = set(), [], {}
+        for f in filas:
+            if f["telefono"] != "web":
+                if f["telefono"] in vistos:
+                    continue
+                vistos.add(f["telefono"])
+            zona = f["zona"] or zona_de(f["nombre_zona"])
+            if zona and zona not in resumenes:
+                resumenes[zona] = resumen_zona(conn, zona)
+            r = resumenes.get(zona)
+            inicio = datetime.strptime(f["timestamp"], FORMATO)
+            salida.append({
+                "id": f["id"],
+                "nombre_zona": zona or "sector sin nombre",   # sin guiones: el mapa usa el texto tal cual
+                "lat": f["latitud"],
+                "lon": f["longitud"],
+                "tiene_luz": f["tiene_luz"],
+                "capa_color": "gris" if f["tiene_luz"] == 0 else "amarillo",
+                "hora_inicio": hora_legible(inicio),
+                "hora_estimada": (r["retorno_estimado"] if r and r["retorno_estimado"] and f["tiene_luz"] == 0
+                                  else "Sin estimación (faltan datos)" if f["tiene_luz"] == 0 else "—"),
+                "actualizado": f["timestamp"],
+            })
+    return salida
+
+
+@app.get("/api/salud")
+async def salud():
+    with closing(conectar()) as conn:
+        n = conn.execute("SELECT COUNT(*) FROM circuitos").fetchone()[0]
+    return {"status": "ok", "reportes": n, "hora_venezuela": texto_hora()}

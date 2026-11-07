@@ -6,6 +6,10 @@ services:
     container_name: luz_backend_python
     expose:
       - "8000"
+    volumes:
+      - ./datos:/app/datos   # la base de datos queda en el disco del servidor, no dentro del contenedor
+    environment:
+      - TZ=America/Caracas
     restart: always
 
   orquestador-node:
