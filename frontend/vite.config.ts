@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -8,5 +9,10 @@ export default defineConfig({
   server: {
     // En desarrollo, las llamadas a la API van al gateway que corre en Docker
     proxy: { '/api': 'http://127.0.0.1:5050' },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    css: false,
   },
 });
