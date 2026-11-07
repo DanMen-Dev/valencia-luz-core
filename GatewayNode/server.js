@@ -32,7 +32,8 @@ app.use((req, res, next) => {
 });
 
 app.use('/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '7d' }));
-app.use('/static', express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
+// /static lo toma el nginx de Brecha-Cero (archivos de Django), por eso los del mapa van en /recursos
+app.use('/recursos', express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
 
 app.get('/', (req, res) => res.redirect('/mapa'));
 app.get('/mapa', (req, res) => res.sendFile(path.join(__dirname, 'public', 'mapa.html')));
