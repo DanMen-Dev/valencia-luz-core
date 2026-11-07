@@ -13,7 +13,7 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Parte | Estado |
 |---|---|
 | Mapa web y reporte desde el navegador | En producción |
-| Backend (API, estimaciones, respaldo diario) | En producción, 85 pruebas automáticas |
+| Backend (API, estimaciones, respaldo diario) | En producción, 89 pruebas automáticas |
 | Bot de Telegram [@RadarCortesBot](https://t.me/RadarCortesBot) (n8n) | En producción, gratis |
 | Canal de WhatsApp (n8n + Chatwoot) | Listo, sin número conectado: los mensajes del bot se cobran por mensaje |
 | Frontend en React + TypeScript (Vite) | En producción, 50 pruebas con Vitest y Testing Library |
@@ -80,7 +80,11 @@ Para cada sector, con los reportes de los últimos 7 días:
 - **Retorno estimado:** inicio del corte de hoy + duración promedio del sector. Si el sector aún no tiene cortes medidos, se usa el promedio general (6 h) y se dice así: "aprox. 6:00 PM (promedio general de 6 h)".
 - **Probabilidad de corte:** días con al menos un corte ÷ 7.
 
-Es estadística simple y transparente, no un modelo predictivo. Un modelo de verdad necesita más historia de la que hay hoy.
+**Patrones (predicción, etapa 1):** con las últimas 8 semanas de un sector, a qué hora suelen empezar los cortes (franjas de 3 horas), qué días se repiten, cuánto duran (mediana de los cortes medidos) y en qué porcentaje de los días hubo corte en la franja horaria de ahora. Solo se muestra con al menos 4 cortes en 2 semanas distintas, y el bot dice con cuántos datos lo calculó: "Patrón (8 cortes en 4 semanas): los cortes suelen empezar entre las 12 PM y 3 PM (martes y jueves), duran unas 4 h."
+
+Cada noche se recalcula la tabla `cortes` (inicio, fin, duración y tipo de cada corte por celda), la base para la etapa 2: un modelo de probabilidad cuando haya varios meses de historia.
+
+Es estadística simple y transparente, a propósito: con pocos datos, un modelo más complejo solo aprendería ruido.
 
 ### App instalable y mapa sin conexión
 

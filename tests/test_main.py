@@ -495,5 +495,60 @@ def test_el_reporte_escrito_respeta_el_tope_por_telefono(app_mod, sectores):
     assert escribir(sectores, "se fue la luz en prebo", "prebo").status_code == 429
 
 
+# ---------- Prediccion, etapa 1: patrones
+
+@pytest.fixture
+def cuatro_semanas(app_mod):
+    """Prebo: corte los martes y jueves a las 2:20 PM, vuelve 4 h despues, durante 4 semanas."""
+    hoy = app_mod.ahora().replace(hour=15, minute=0, second=0, microsecond=0)
+    for d in range(28, 0, -1):
+        dia = hoy - timedelta(days=d)
+        if dia.weekday() in (1, 3):
+            inicio = dia.replace(hour=14, minute=20)
+            insertar(app_mod, "prebo", 0, inicio, tel="58414001")
+            insertar(app_mod, "prebo", 1, inicio + timedelta(hours=4), tel="58414001")
+    return hoy
+
+
+def test_patrones_por_hora_dia_y_duracion(app_mod, cuatro_semanas):
+    with closing(app_mod.conectar()) as conn:
+        p = app_mod.patrones_zona(conn, "prebo", momento=cuatro_semanas)
+    assert p["suficiente"] and p["cortes_analizados"] == 8 and p["semanas_con_cortes"] == 4
+    assert p["franja_habitual"]["texto"] == "12 PM y 3 PM"
+    assert p["dias_habituales"] == ["martes", "jueves"]
+    assert p["duracion_tipica_horas"] == 4.0
+    # A las 3 PM: los cortes de 2:20 a 6:20 PM tocan la franja de 3 a 6 PM
+    assert p["franja_actual"] == "3 PM y 6 PM" and 25 <= p["probabilidad_franja_actual_pct"] <= 40
+    texto = "\n".join(app_mod.lineas_patron(p))
+    assert "suelen empezar entre las 12 PM y 3 PM (martes y jueves)" in texto and "duran unas 4 h" in texto
+
+
+def test_sin_datos_suficientes_no_hay_patron(app_mod):
+    base = app_mod.ahora().replace(hour=12, minute=0, second=0, microsecond=0)
+    insertar(app_mod, "prebo", 0, base - timedelta(days=2))
+    insertar(app_mod, "prebo", 1, base - timedelta(days=2) + timedelta(hours=3))
+    with closing(app_mod.conectar()) as conn:
+        p = app_mod.patrones_zona(conn, "prebo", momento=base)
+    assert p["suficiente"] is False and app_mod.lineas_patron(p) == []
+
+
+def test_el_bot_suma_el_patron_a_la_consulta(cliente, cuatro_semanas):
+    msg = cliente.get("/api/analitica/historico", params={"zona": "Prebo"}).json()["mensaje"]
+    assert "• Patrón (8 cortes en 4 semanas)" in msg
+    assert msg.index("Patrón") < msg.index("Mapa en vivo")
+    r = cliente.get("/api/analitica/patrones", params={"zona": "Prebo"}).json()
+    assert r["suficiente"] and r["lineas"]
+
+
+def test_recalcular_cortes_es_idempotente(app_mod, cuatro_semanas):
+    with sqlite3.connect(app_mod.DB_PATH) as c:
+        c.execute("UPDATE circuitos SET celda = '10.21_-68.02'")
+    with closing(app_mod.conectar()) as conn, conn:
+        assert app_mod.recalcular_cortes(conn, momento=cuatro_semanas) == 8
+        assert app_mod.recalcular_cortes(conn, momento=cuatro_semanas) == 8
+        filas = conn.execute("SELECT tipo, COUNT(*), AVG(duracion_horas) FROM cortes GROUP BY tipo").fetchall()
+    assert [tuple(f) for f in filas] == [("medido", 8, 4.0)]
+
+
 def test_salud(cliente):
     assert cliente.get("/api/salud").json()["status"] == "ok"

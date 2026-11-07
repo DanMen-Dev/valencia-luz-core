@@ -220,6 +220,20 @@ def init_db():
                 votar_alias(conn, f["zona"], f["celda"], f["timestamp"])
         conn.execute("CREATE INDEX IF NOT EXISTS ix_circuitos_tel_tiempo ON circuitos (telefono, timestamp)")
         # La conversacion ("esperando el nombre del sector") vive en la base: sobrevive a un reinicio
+        # Cortes ya calculados por celda (inicio, fin, duracion, tipo): la base para analizar y predecir.
+        # Se recalculan cada noche (python main.py recalcular-cortes) a partir de los reportes.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cortes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                celda TEXT NOT NULL,
+                inicio DATETIME NOT NULL,
+                fin DATETIME,
+                duracion_horas REAL,
+                tipo TEXT NOT NULL,          -- medido | vencido | abierto
+                calculado DATETIME NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_cortes_celda_inicio ON cortes (celda, inicio)")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS conversaciones (
                 telefono TEXT PRIMARY KEY,
@@ -588,21 +602,25 @@ def episodios(filas, momento=None, horas_corte=None):
     return cortes
 
 
-def resumen_zona(conn, zona, momento=None):
-    momento = momento or ahora()
-    hoy = momento.replace(hour=0, minute=0, second=0, microsecond=0)
-    hace_7 = momento - timedelta(days=7)
-    # Un sector son las celdas que cubre su nombre popular (todas sus variantes cuentan). Si el nombre
-    # todavia no tiene celdas (reportes sin ubicacion), se busca por el texto tal cual.
+def filas_sector(conn, zona, desde, hasta):
+    """Reportes (timestamp, tiene_luz) de un sector entre dos momentos. Un sector son las celdas que cubre su
+    nombre popular (todas sus variantes cuentan); sin celdas todavia, se busca por el texto tal cual."""
     celdas = celdas_de_alias(conn, zona)
     if celdas:
         filtro, valores = f"(celda IN ({','.join('?' * len(celdas))}) OR zona = ?)", [*celdas, zona]
     else:
         filtro, valores = "zona = ?", [zona]
-    filas = conn.execute(f"""
+    return conn.execute(f"""
         SELECT timestamp, tiene_luz FROM circuitos
         WHERE {filtro} AND nombre_zona != ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp
-    """, (*valores, PENDIENTE, hace_7.strftime(FORMATO), momento.strftime(FORMATO))).fetchall()
+    """, (*valores, PENDIENTE, desde.strftime(FORMATO), hasta.strftime(FORMATO))).fetchall()
+
+
+def resumen_zona(conn, zona, momento=None):
+    momento = momento or ahora()
+    hoy = momento.replace(hour=0, minute=0, second=0, microsecond=0)
+    hace_7 = momento - timedelta(days=7)
+    filas = filas_sector(conn, zona, hace_7, momento)
     cortes = episodios(filas, momento)
     duraciones = [(f - i).total_seconds() / 3600 for i, f, tipo in cortes if tipo == "medido"]
     promedio = round(sum(duraciones) / len(duraciones), 1) if duraciones else None
@@ -638,6 +656,125 @@ def resumen_zona(conn, zona, momento=None):
         "dias_con_corte_7_dias": dias_con_corte,
         "probabilidad_corte_pct": round(dias_con_corte / 7 * 100),
     }
+
+
+# ---------- Prediccion, etapa 1: patrones por hora y dia ----------
+# Estadistica simple y explicable sobre las ultimas 8 semanas: a que hora suelen empezar los cortes, que dias
+# se repiten, cuanto duran y con que frecuencia hubo corte en la franja horaria de ahora. Solo se muestra
+# cuando hay datos suficientes; nunca un patron inventado con dos reportes.
+DIAS_PATRON = 56
+MIN_CORTES_PATRON = 4
+MIN_SEMANAS_PATRON = 2
+MIN_DIAS_PROBABILIDAD = 14
+DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+def franja_de(hora):
+    """Franjas de 3 horas: 0 = 12-3 AM, 1 = 3-6 AM, ... 7 = 9 PM-12 AM."""
+    return hora // 3
+
+
+def texto_franja(franja):
+    def h(x):
+        x %= 24
+        return f"{12 if x % 12 == 0 else x % 12} {'AM' if x < 12 else 'PM'}"
+    return f"{h(franja * 3)} y {h(franja * 3 + 3)}"
+
+
+def patrones_zona(conn, zona, momento=None, dias=DIAS_PATRON):
+    momento = momento or ahora()
+    filas = filas_sector(conn, zona, momento - timedelta(days=dias), momento)
+    cortes = episodios(filas, momento)
+    semanas = {i.isocalendar()[:2] for i, _, _ in cortes}
+    salida = {"zona": zona, "cortes_analizados": len(cortes), "semanas_con_cortes": len(semanas),
+              "suficiente": len(cortes) >= MIN_CORTES_PATRON and len(semanas) >= MIN_SEMANAS_PATRON,
+              "franja_habitual": None, "dias_habituales": [], "duracion_tipica_horas": None,
+              "probabilidad_franja_actual_pct": None, "dias_observados": 0}
+    if not salida["suficiente"]:
+        return salida
+
+    por_franja = {}
+    for i, _, _ in cortes:
+        por_franja[franja_de(i.hour)] = por_franja.get(franja_de(i.hour), 0) + 1
+    franja, n = max(por_franja.items(), key=lambda kv: (kv[1], -kv[0]))
+    if n >= 3 and n / len(cortes) >= 0.4:
+        salida["franja_habitual"] = {"franja": franja, "texto": texto_franja(franja), "cortes": n}
+
+    por_dia = {}
+    for i, _, _ in cortes:
+        por_dia[i.weekday()] = por_dia.get(i.weekday(), 0) + 1
+    promedio = len(cortes) / 7
+    habituales = sorted((d for d, k in por_dia.items() if k >= 2 and k >= 1.5 * promedio),
+                        key=lambda d: (-por_dia[d], d))[:2]
+    salida["dias_habituales"] = [DIAS_SEMANA[d] for d in sorted(habituales)]
+
+    medidos = sorted((f - i).total_seconds() / 3600 for i, f, t in cortes if t == "medido")
+    if len(medidos) >= 3:
+        mitad = len(medidos) // 2
+        salida["duracion_tipica_horas"] = round(medidos[mitad] if len(medidos) % 2
+                                                else (medidos[mitad - 1] + medidos[mitad]) / 2, 1)
+
+    primero = datetime.strptime(filas[0]["timestamp"], FORMATO).date()
+    observados = min(dias, (momento.date() - primero).days + 1)
+    salida["dias_observados"] = observados
+    if observados >= MIN_DIAS_PROBABILIDAD:
+        ahora_franja = franja_de(momento.hour)
+        # Un dia cuenta si algun corte toco esa franja (no solo si empezo en ella): un corte de 2 a 6 PM
+        # tambien es "corte entre 3 y 6 PM". Vencido: se asume que duro HORAS_CORTE; abierto: hasta ahora.
+        dias_con = set()
+        for i, f, tipo in cortes:
+            fin = f or (i + timedelta(hours=HORAS_CORTE) if tipo == "vencido" else momento)
+            dia = i.date()
+            while dia <= fin.date():
+                ventana = datetime.combine(dia, datetime.min.time(), i.tzinfo) + timedelta(hours=ahora_franja * 3)
+                if i < ventana + timedelta(hours=3) and fin > ventana:
+                    dias_con.add(dia)
+                dia += timedelta(days=1)
+        salida["probabilidad_franja_actual_pct"] = round(len(dias_con) / observados * 100)
+        salida["franja_actual"] = texto_franja(ahora_franja)
+    return salida
+
+
+def lineas_patron(p):
+    """Lineas para el bot; vacio si no hay datos suficientes."""
+    if not p["suficiente"]:
+        return []
+    partes = []
+    if p["franja_habitual"]:
+        dias = f" ({' y '.join(p['dias_habituales'])})" if p["dias_habituales"] else ""
+        partes.append(f"los cortes suelen empezar entre las {p['franja_habitual']['texto']}{dias}")
+    elif p["dias_habituales"]:
+        partes.append(f"los cortes se repiten más los {' y '.join(p['dias_habituales'])}")
+    if p["duracion_tipica_horas"]:
+        partes.append(f"duran unas {p['duracion_tipica_horas']:g} h")
+    evidencia = f"{p['cortes_analizados']} cortes en {p['semanas_con_cortes']} semanas"
+    lineas = [f"• Patrón ({evidencia}): {', '.join(partes)}."] if partes else []
+    if p["probabilidad_franja_actual_pct"] is not None:
+        lineas.append(f"• Entre las {p['franja_actual']} hubo corte {p['probabilidad_franja_actual_pct']} % "
+                      f"de los días ({p['dias_observados']} días con datos).")
+    return lineas
+
+
+def recalcular_cortes(conn, dias=60, momento=None):
+    """Rehace la tabla cortes de los ultimos 'dias', celda por celda. Idempotente."""
+    momento = momento or ahora()
+    desde = momento - timedelta(days=dias)
+    conn.execute("DELETE FROM cortes WHERE inicio >= ?", (desde.strftime(FORMATO),))
+    celdas = [f["celda"] for f in conn.execute(
+        "SELECT DISTINCT celda FROM circuitos WHERE celda IS NOT NULL AND timestamp >= ?", (desde.strftime(FORMATO),))]
+    total = 0
+    for celda in celdas:
+        filas = conn.execute("""
+            SELECT timestamp, tiene_luz FROM circuitos
+            WHERE celda = ? AND nombre_zona != ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp
+        """, (celda, PENDIENTE, desde.strftime(FORMATO), momento.strftime(FORMATO))).fetchall()
+        for inicio, fin, tipo in episodios(filas, momento):
+            conn.execute("""
+                INSERT INTO cortes (celda, inicio, fin, duracion_horas, tipo, calculado) VALUES (?, ?, ?, ?, ?, ?)
+            """, (celda, inicio.strftime(FORMATO), fin.strftime(FORMATO) if fin else None,
+                  round((fin - inicio).total_seconds() / 3600, 2) if fin else None, tipo, texto_hora(momento)))
+            total += 1
+    return total
 
 
 def mensaje_zona(r):
@@ -706,8 +843,12 @@ def consulta_sector(conn, zona):
         return {"zona": sector["escrito"], "sector": sector, "mensaje": pregunta_ambigua(sector),
                 "hora_corte": "por confirmar el sector", "hora_retorno": "por confirmar el sector",
                 "duracion_promedio": "sin datos", "reincidencia_detectada": "No"}
-    r = resumen_zona(conn, sector["nombre"] or normalizar_zona(zona))
+    nombre = sector["nombre"] or normalizar_zona(zona)
+    r = resumen_zona(conn, nombre)
     mensaje = mensaje_zona(r)
+    patron = lineas_patron(patrones_zona(conn, nombre))
+    if patron:   # antes del enlace al mapa
+        mensaje = mensaje.replace("\nMapa en vivo:", "\n" + "\n".join(patron) + "\nMapa en vivo:", 1)
     nota = nota_entendido(sector)
     if nota:   # el vecino ve si el sector es el que queria
         mensaje = mensaje.replace("\n", f"\n{nota}\n", 1)
@@ -836,8 +977,28 @@ async def sector(nombre: str):
     return {"nombre": limpio, "conocido": bool(celdas), "celdas": celdas, "resolucion": resolucion}
 
 
+# 9. Patrones de un sector (prediccion, etapa 1)
+@app.get("/api/analitica/patrones")
+async def analitica_patrones(zona: str):
+    with closing(conectar()) as conn:
+        sector = resolver_sector(conn, zona)
+        nombre = sector["nombre"] or normalizar_zona(zona)
+        p = patrones_zona(conn, nombre)
+    return {**p, "sector": sector, "lineas": lineas_patron(p)}
+
+
 @app.get("/api/salud")
 async def salud():
     with closing(conectar()) as conn:
         n = conn.execute("SELECT COUNT(*) FROM circuitos").fetchone()[0]
     return {"status": "ok", "reportes": n, "hora_venezuela": texto_hora(), "horas_corte": HORAS_CORTE}
+
+
+if __name__ == "__main__":
+    # Tarea nocturna (cron): docker exec luz_backend_python python main.py recalcular-cortes
+    import sys
+    if sys.argv[1:] == ["recalcular-cortes"]:
+        with closing(conectar()) as conn, conn:
+            print(f"{texto_hora()} cortes recalculados: {recalcular_cortes(conn)}")
+    else:
+        print("uso: python main.py recalcular-cortes")
