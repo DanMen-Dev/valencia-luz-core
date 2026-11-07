@@ -61,4 +61,11 @@ describe('Panel', () => {
     await userEvent.click(screen.getByRole('button', { name: /Instalar Radar/ }));
     expect(onInstalar).toHaveBeenCalledOnce();
   });
+
+  it('en iPhone explica como agregar la app desde Compartir', () => {
+    render(<Panel {...base} ayudaInstalar="ios" />);
+    expect(screen.getByText(/Instalar Radar en tu iPhone/)).toBeInTheDocument();
+    expect(screen.getByText('Agregar a inicio')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Instalar Radar/ })).not.toBeInTheDocument();
+  });
 });

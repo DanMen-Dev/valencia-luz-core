@@ -15,7 +15,7 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Mapa web y reporte desde el navegador | En producción |
 | Backend (API, estimaciones, respaldo diario) | En producción, 41 pruebas automáticas |
 | Bot de WhatsApp (n8n + Chatwoot) | Probado de punta a punta con eventos simulados; falta conectar un número de WhatsApp |
-| Frontend en React + TypeScript (Vite) | En producción, 45 pruebas con Vitest y Testing Library |
+| Frontend en React + TypeScript (Vite) | En producción, 48 pruebas con Vitest y Testing Library |
 | App instalable (PWA) y mapa sin conexión | En producción |
 
 No es información oficial de Corpoelec: todo sale de lo que reportan los vecinos.
@@ -62,9 +62,9 @@ Es estadística simple y transparente, no un modelo predictivo. Un modelo de ver
 
 ### App instalable y mapa sin conexión
 
-Durante un apagón muchas veces cae también la señal de datos, así que Radar es una **PWA**: en Android se instala desde el botón "Instalar Radar" (en iPhone, Compartir → Agregar a inicio) y abre sin conexión. Un service worker guarda la app, la última lista de reportes (el panel avisa "Sin conexión: mostrando los reportes guardados a las …") y las calles ya vistas.
+Durante un apagón muchas veces cae también la señal de datos, así que Radar es una **PWA**: en Android y en computadora se instala desde el botón "Instalar Radar"; en iPhone la app muestra los pasos (Safari → Compartir → Agregar a inicio) y abre sin conexión. Un service worker guarda la app, la última lista de reportes (el panel avisa "Sin conexión: mostrando los reportes guardados a las …") y las calles ya vistas.
 
-El fondo del mapa es **OpenFreeMap** (mapas vectoriales con datos de OpenStreetMap, gratis, sin clave ni límite de vistas), dibujado con MapLibre debajo de las capas de Leaflet. MapLibre pesa unos 300 KB comprimido, así que se carga aparte: la app y los círculos aparecen primero sobre las imágenes de OpenStreetMap, y el fondo vectorial las reemplaza cuando termina de dibujarse. Si el teléfono no tiene WebGL o OpenFreeMap falla, se quedan las imágenes de OpenStreetMap. Se descartó MapTiler porque su plan gratis se pausa al pasar 5.000 sesiones al mes, justo lo que pasaría en un apagón grande.
+El fondo del mapa es **OpenFreeMap**, estilo *Liberty* (mapas vectoriales a color con datos de OpenStreetMap, gratis, sin clave ni límite de vistas), dibujado con MapLibre debajo de las capas de Leaflet. MapLibre pesa unos 300 KB comprimido, así que se carga aparte: la app y los círculos aparecen primero sobre las imágenes de OpenStreetMap, y el fondo vectorial las reemplaza cuando termina de dibujarse. Si el teléfono no tiene WebGL o OpenFreeMap falla, se quedan las imágenes de OpenStreetMap. Se descartó MapTiler porque su plan gratis se pausa al pasar 5.000 sesiones al mes, justo lo que pasaría en un apagón grande.
 
 ## Decisiones y lecciones
 

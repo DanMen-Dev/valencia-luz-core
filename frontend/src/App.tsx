@@ -16,7 +16,7 @@ function focoInicial(): Foco | null {
 
 export default function App() {
   const estado = useReportes();
-  const { puedeInstalar, instalar } = useInstalar();
+  const { puedeInstalar, instalar, ayuda } = useInstalar();
   const [whatsapp, setWhatsapp] = useState('');
   const [horas, setHoras] = useState(HORAS_POR_DEFECTO);
   const [aviso, setAviso] = useState<Aviso>(null);
@@ -57,7 +57,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Panel {...estado} whatsapp={whatsapp} horas={horas} puedeInstalar={puedeInstalar} onInstalar={() => void instalar()} aviso={aviso} enviando={enviando} onReportar={reportar} />
+      <Panel {...estado} whatsapp={whatsapp} horas={horas} puedeInstalar={puedeInstalar} ayudaInstalar={ayuda} onInstalar={() => void instalar()} aviso={aviso} enviando={enviando} onReportar={reportar} />
       <main className="contenedor-mapa">
         <MapaReportes reportes={estado.reportes} foco={foco} onConfirmar={confirmar} />
       </main>

@@ -8,6 +8,7 @@ interface Props {
   guardadoEn?: Date | null;
   puedeInstalar?: boolean;
   onInstalar?: () => void;
+  ayudaInstalar?: 'ios' | 'android' | null;
   whatsapp: string;
   horas: number;
   aviso: Aviso;
@@ -29,7 +30,7 @@ function resumen({ reportes, cargando, error, actualizado, horas }: Pick<Props, 
 const horaCorta = (d: Date) => d.toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' });
 
 export function Panel(props: Props) {
-  const { whatsapp, aviso, enviando, onReportar, guardadoEn, puedeInstalar, onInstalar } = props;
+  const { whatsapp, aviso, enviando, onReportar, guardadoEn, puedeInstalar, onInstalar, ayudaInstalar } = props;
   return (
     <aside className="panel">
       <header>
@@ -51,7 +52,27 @@ export function Panel(props: Props) {
           </a>
         )}
         {puedeInstalar && onInstalar && (
-          <button type="button" className="btn btn-instalar" onClick={onInstalar}>📲 Instalar Radar en este teléfono</button>
+          <button type="button" className="btn btn-instalar" onClick={onInstalar}>📲 Instalar Radar</button>
+        )}
+        {!puedeInstalar && ayudaInstalar === 'ios' && (
+          <details className="ayuda-instalar">
+            <summary>📲 Instalar Radar en tu iPhone</summary>
+            <ol>
+              <li>Abre esta página en <strong>Safari</strong>.</li>
+              <li>Toca el botón <strong>Compartir</strong> (el cuadrito con una flecha hacia arriba ⬆️, abajo en el centro).</li>
+              <li>Desliza hacia abajo y toca <strong>Agregar a inicio</strong>.</li>
+              <li>Toca <strong>Agregar</strong>: Radar queda en tu pantalla como una app.</li>
+            </ol>
+          </details>
+        )}
+        {!puedeInstalar && ayudaInstalar === 'android' && (
+          <details className="ayuda-instalar">
+            <summary>📲 Instalar Radar en tu teléfono</summary>
+            <ol>
+              <li>Toca el menú <strong>⋮</strong> de Chrome (arriba a la derecha).</li>
+              <li>Toca <strong>Instalar aplicación</strong> (o <strong>Agregar a pantalla principal</strong>).</li>
+            </ol>
+          </details>
         )}
         <p className={`aviso ${aviso?.tipo ?? ''}`} role="status" aria-live="polite">{aviso?.texto ?? ''}</p>
         {guardadoEn && (

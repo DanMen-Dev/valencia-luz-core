@@ -28,7 +28,8 @@ const FondoVectorial = lazy(() =>
 // Con un empaquetador, Leaflet no encuentra solo las imagenes del marcador
 L.Icon.Default.mergeOptions({ iconUrl: iconoUrl, iconRetinaUrl: iconoRetinaUrl, shadowUrl: sombraUrl });
 
-const COLORES = { sin_luz: '#9e9e9e', con_luz: '#ffd54f' } as const;
+// Contrastan sobre el mapa a color: gris azulado oscuro (sin luz) y ambar (volvio la luz)
+const COLORES = { sin_luz: '#546e7a', con_luz: '#ffb300' } as const;
 
 // Numero de reportes en el centro del circulo (solo si hay mas de uno). No intercepta clics: el popup es del circulo.
 function etiqueta(g: Grupo) {
