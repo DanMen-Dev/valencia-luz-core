@@ -31,10 +31,13 @@ h1 { margin: 0; font-size: 22px; color: var(--acento); font-weight: 800; }
 .pop .zona { display: block; font-size: 15px; font-weight: 800; border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 6px; }
 .pop .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; margin-bottom: 6px; }
 .pop .badge.sin { background: var(--rojo); color: #fff; } .pop .badge.con { background: var(--amarillo); color: #121212; }
-.pop .linea { display: block; } .pop small { display: block; color: var(--suave); margin-top: 6px; }
+.pop .linea { display: block; } .pop .conteo { font-weight: 700; } .pop small { display: block; color: var(--suave); margin-top: 6px; }
 @media (max-width: 768px) {
   .app { flex-direction: column; }
   .panel { width: 100%; border-right: 0; border-bottom: 3px solid var(--acento); padding: 14px 16px; gap: 12px; max-height: 48vh; }
   .leyenda { display: none; }
   .contenedor-mapa { flex: 1; min-height: 52vh; }
 }
+.conteo-grupo { display: grid; place-items: center; border-radius: 50%; font: 800 13px/1 system-ui, sans-serif;
+                border: 2px solid #121212; box-shadow: 0 1px 4px rgba(0,0,0,.4); pointer-events: none; }
+.conteo-grupo.sin_luz { background: #616161; color: #fff; } .conteo-grupo.con_luz { background: var(--amarillo); color: #121212; }

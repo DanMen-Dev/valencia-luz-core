@@ -15,7 +15,7 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Mapa web y reporte desde el navegador | En producción |
 | Backend (API, estimaciones, respaldo diario) | En producción, 27 pruebas automáticas |
 | Bot de WhatsApp (n8n + Chatwoot) | Probado de punta a punta con eventos simulados; falta conectar un número de WhatsApp |
-| Frontend en React + TypeScript (Vite) | En producción, 16 pruebas con Vitest y Testing Library |
+| Frontend en React + TypeScript (Vite) | En producción, 27 pruebas con Vitest y Testing Library |
 
 No es información oficial de Corpoelec: todo sale de lo que reportan los vecinos.
 
@@ -43,7 +43,7 @@ Saludos, ubicaciones y respuestas de sector se resuelven con reglas en un nodo d
 
 **Por la web**
 
-La app de React tiene dos botones ("No hay luz donde estoy" / "Ya volvió la luz donde estoy") que usan la ubicación del navegador. El reporte toma el nombre del sector reportado más cercano (a 1,5 km o menos). El mapa se actualiza cada minuto.
+La app de React tiene dos botones ("No hay luz donde estoy" / "Ya volvió la luz donde estoy") que usan la ubicación del navegador. El reporte toma el nombre del sector reportado más cercano (a 1,5 km o menos). El mapa se actualiza cada minuto y agrupa los reportes cercanos del mismo sector en un solo círculo, con el número de vecinos y cuántos tienen o no luz.
 
 ### Qué calcula el backend (y qué no)
 
@@ -132,7 +132,6 @@ Los nombres internos (`valencia_luz`, `luz_backend_python`, el repo) vienen del 
 ## Próximos pasos
 
 - Conectar un número de WhatsApp al bot.
-- Agrupar reportes cercanos del mismo sector en el mapa.
 - Más historia → estimaciones por franja horaria.
 
 ---
