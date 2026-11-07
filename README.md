@@ -13,7 +13,7 @@ Radar es un mapa comunitario de cortes de luz en Venezuela. Los vecinos reportan
 | Parte | Estado |
 |---|---|
 | Mapa web y reporte desde el navegador | En producción |
-| Backend (API, estimaciones, respaldo diario) | En producción, 54 pruebas automáticas |
+| Backend (API, estimaciones, respaldo diario) | En producción, 69 pruebas automáticas |
 | Bot de Telegram [@RadarCortesBot](https://t.me/RadarCortesBot) (n8n) | En producción, gratis |
 | Canal de WhatsApp (n8n + Chatwoot) | Listo, sin número conectado: los mensajes del bot se cobran por mensaje |
 | Frontend en React + TypeScript (Vite) | En producción, 50 pruebas con Vitest y Testing Library |
@@ -63,6 +63,8 @@ Cada vez que un vecino manda su ubicación y escribe su sector, ese nombre suma 
 - en el mapa, una variante minoritaria se muestra con el nombre más votado de su celda; un sector de borde con peso propio (30 % o más de los votos) conserva su nombre;
 - un reporte desde la web toma el nombre de su celda o de sus vecinas;
 - el resumen de un sector suma los reportes de todas las celdas que cubre su nombre.
+
+**Búsqueda tolerante:** cuando alguien pregunta por un sector, el nombre se busca primero tal cual, después como variante amarrada a un sector ("prevo" → Prebo) y después con errores de letra (1 en nombres de 5 a 8 letras, 2 en los más largos, ninguno en los cortos): "Tocuyto" → Tocuyito, "sandiego" → San Diego. El bot dice qué entendió; si dos sectores quedan igual de parecidos, pregunta "¿te refieres a Prado o Pardo?" en vez de adivinar. Cada reporte con ubicación enseña variantes nuevas.
 
 Los reportes se guardan para siempre (tabla `circuitos`, cada fila es un reporte con su celda): son la base para predecir.
 

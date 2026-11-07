@@ -1,5 +1,6 @@
 """Pruebas del backend: reportes por WhatsApp y web, conversacion, mapa y estadisticas sin datos inventados."""
 import importlib
+from contextlib import closing
 import sqlite3
 from datetime import timedelta
 
@@ -375,6 +376,58 @@ def test_consultar_un_nombre_popular_y_sus_celdas(cliente):
     assert r["nombre"] == "prebo" and r["conocido"] is True
     assert r["celdas"][0]["id"] == "10.21_-68.02" and r["celdas"][0]["cubre"] is True
     assert cliente.get("/api/sectores", params={"nombre": "Guaparo"}).json()["conocido"] is False
+
+
+# ---------- Busqueda tolerante
+
+@pytest.mark.parametrize("a, b, d", [
+    ("prebo", "prebo", 0), ("prevo", "prebo", 1), ("perbo", "prebo", 1),    # cambio e intercambio de vecinas
+    ("tocuyto", "tocuyito", 1), ("prebos", "prebo", 1), ("guaparo", "prebo", 6),
+])
+def test_distancia_letras(app_mod, a, b, d):
+    assert app_mod.distancia_letras(a, b) == d
+
+
+@pytest.fixture
+def sectores(cliente):
+    """Prebo (3 votos + 1 'Prevo'), Tocuyito, San Diego, Prado (2) y Pardo (1), en celdas distintas."""
+    datos = [("Prebo", 10.2134, -68.0125)] * 3 + [("Prevo", 10.2134, -68.0125)] + \
+        [("Tocuyito", 10.10, -68.08)] * 2 + [("San Diego", 10.25, -67.95)] + \
+        [("Prado", 10.30, -68.10)] * 2 + [("Pardo", 10.35, -68.15)]
+    for i, (texto, lat, lon) in enumerate(datos):
+        nombrar(cliente, f"584140{i:03d}", texto, lat=lat, lon=lon)
+    return cliente
+
+
+@pytest.mark.parametrize("escrito, metodo, nombre", [
+    ("Urb Prebo", "exacto", "prebo"),
+    ("prevo", "exacto", "prebo"),          # variante amarrada a la celda de Prebo
+    ("Perbo", "aproximado", "prebo"),
+    ("Tocuyto", "aproximado", "tocuyito"),
+    ("sandiego", "aproximado", "san diego"),
+    ("Prdo", "desconocido", "prdo"),       # nombres cortos: un cambio ya puede ser otro sector
+    ("Guaparo", "desconocido", "guaparo"),
+])
+def test_resolver_sector(app_mod, sectores, escrito, metodo, nombre):
+    with closing(app_mod.conectar()) as conn:
+        r = app_mod.resolver_sector(conn, escrito)
+    assert (r["metodo"], r["nombre"]) == (metodo, nombre)
+
+
+def test_dos_sectores_igual_de_parecidos_se_pregunta(app_mod, sectores):
+    with closing(app_mod.conectar()) as conn:
+        r = app_mod.resolver_sector(conn, "Paado")
+    assert r["metodo"] == "ambiguo" and set(r["candidatos"]) == {"prado", "pardo"}
+    msg = sectores.get("/api/analitica/historico", params={"zona": "Paado"}).json()["mensaje"]
+    assert "¿te refieres a" in msg and "PRADO" in msg and "PARDO" in msg
+
+
+def test_el_bot_dice_que_sector_entendio(sectores):
+    r = sectores.get("/api/analitica/historico", params={"zona": "Tocuyto"}).json()
+    assert r["sector"]["metodo"] == "aproximado"
+    assert "Entendí TOCUYITO" in r["mensaje"] and "*Radar · TOCUYITO*" in r["mensaje"]
+    exacto = sectores.get("/api/analitica/historico", params={"zona": "Prebo"}).json()["mensaje"]
+    assert "Entendí" not in exacto
 
 
 def test_salud(cliente):

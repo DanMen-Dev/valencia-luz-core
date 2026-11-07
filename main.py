@@ -266,6 +266,76 @@ def nombre_para_mostrar(conn, zona, celda):
     return nombre_de_celda(conn, celda, mirar_vecinas=not propio) or propio
 
 
+# ---------- Busqueda tolerante: "Prevo", "Tocuyto" o "sandiego" encuentran su sector ----------
+
+def distancia_letras(a, b):
+    """Cuantas letras hay que cambiar, quitar, poner o intercambiar (vecinas) para pasar de a a b
+    (distancia de Damerau-Levenshtein restringida)."""
+    if a == b:
+        return 0
+    filas = [list(range(len(b) + 1))]
+    for i, ca in enumerate(a, 1):
+        fila = [i]
+        for j, cb in enumerate(b, 1):
+            costo = 0 if ca == cb else 1
+            fila.append(min(filas[-1][j] + 1, fila[j - 1] + 1, filas[-1][j - 1] + costo))
+            if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb:
+                fila[j] = min(fila[j], filas[-2][j - 2] + 1)
+        filas.append(fila)
+    return filas[-1][-1]
+
+
+def tolerancia(nombre):
+    """Errores de letra que se aceptan segun el largo: en nombres cortos un cambio ya es otro sector."""
+    largo = len(nombre.replace(" ", ""))
+    return 0 if largo <= 4 else 1 if largo <= 8 else 2
+
+
+def resolver_sector(conn, texto):
+    """De lo que escribio el vecino al nombre de un sector conocido.
+    Devuelve {'nombre', 'metodo', 'escrito', 'candidatos'} con metodo:
+      'exacto'      nombre conocido (o variante amarrada a un sector: 'prevo' -> 'prebo')
+      'aproximado'  un solo sector a 1-2 letras de distancia
+      'ambiguo'     dos o mas igual de parecidos: hay que preguntar
+      'desconocido' ninguno (se responde con lo que haya bajo ese texto)"""
+    escrito = limpiar_alias(texto)
+    salida = {"nombre": escrito, "metodo": "desconocido", "escrito": escrito, "candidatos": []}
+    if not escrito:
+        return salida
+    votos = {f["nombre"]: f["v"] for f in conn.execute("SELECT nombre, SUM(votos) AS v FROM alias GROUP BY nombre")}
+
+    def canonico(nombre):
+        # Una variante minoritaria ('prevo') se resuelve al nombre mas votado de su celda principal
+        if celdas_de_alias(conn, nombre):
+            return nombre
+        fila = conn.execute("SELECT celda FROM alias WHERE nombre = ? ORDER BY votos DESC LIMIT 1", (nombre,)).fetchone()
+        return (nombre_de_celda(conn, fila["celda"], mirar_vecinas=False) or nombre) if fila else nombre
+
+    if escrito in votos:
+        return {**salida, "nombre": canonico(escrito), "metodo": "exacto"}
+    if not votos:   # sin alias todavia: se busca por el texto tal cual (reportes de antes de las celdas)
+        conocido = conn.execute("SELECT 1 FROM circuitos WHERE zona = ? LIMIT 1", (escrito,)).fetchone()
+        return {**salida, "metodo": "exacto" if conocido else "desconocido"}
+
+    limite = tolerancia(escrito)
+    junto = escrito.replace(" ", "")
+    parecidos = {}
+    for nombre in votos:
+        d = min(distancia_letras(escrito, nombre), distancia_letras(junto, nombre.replace(" ", "")))
+        if d <= min(limite, tolerancia(nombre)) or junto == nombre.replace(" ", ""):
+            destino = canonico(nombre)
+            parecidos[destino] = min(d, parecidos.get(destino, d))
+    if not parecidos:
+        return salida
+    orden = sorted(parecidos, key=lambda n: (parecidos[n], -votos.get(n, 0)))
+    mejor = orden[0]
+    empatados = [n for n in orden if parecidos[n] == parecidos[mejor]]
+    # Empate de distancia: solo se elige solo si uno tiene 5 veces mas votos que el siguiente
+    if len(empatados) == 1 or votos.get(empatados[0], 0) >= 5 * max(1, votos.get(empatados[1], 0)):
+        return {**salida, "nombre": mejor, "metodo": "aproximado", "candidatos": orden[:3]}
+    return {**salida, "nombre": "", "metodo": "ambiguo", "candidatos": empatados[:3]}
+
+
 def celdas_de_alias(conn, nombre):
     """Celdas que cubre un nombre popular: donde tiene al menos PESO_MINIMO_ALIAS de los votos de la celda.
     Una celda de borde (media Prebo, media Kerdell) cuenta para los dos si ambos tienen peso."""
@@ -589,10 +659,22 @@ async def analitica_actual(zona: str):
 #    nunca horas inventadas. 'mensaje' trae el texto listo para enviar.
 @app.get("/api/analitica/historico")
 async def analitica_historica(zona: str):
-    z = normalizar_zona(zona)
     with closing(conectar()) as conn:
-        r = resumen_zona(conn, z)
+        sector = resolver_sector(conn, zona)
+        if sector["metodo"] == "ambiguo":
+            opciones = " o ".join(f"*{c.upper()}*" for c in sector["candidatos"])
+            mensaje = (f"📡 *Radar*: ¿te refieres a {opciones}? "
+                       "Escribe el nombre del sector como lo conoces y te digo cómo está.")
+            return {"zona": sector["escrito"], "sector": sector, "mensaje": mensaje,
+                    "hora_corte": "por confirmar el sector", "hora_retorno": "por confirmar el sector",
+                    "duracion_promedio": "sin datos", "reincidencia_detectada": "No"}
+        r = resumen_zona(conn, sector["nombre"] or normalizar_zona(zona))
+    mensaje = mensaje_zona(r)
+    if sector["metodo"] == "aproximado" or (sector["metodo"] == "exacto" and sector["nombre"] != sector["escrito"]):
+        # Se dice que se interpreto: el vecino ve si el sector es el que queria
+        mensaje = mensaje.replace("\n", f"\n_(Entendí {sector['nombre'].upper()}; escribiste «{sector['escrito']}».)_\n", 1)
     return {
+        "sector": sector,
         **r,
         "hora_corte": r["inicio_corte_hoy"] or "sin reportes de corte hoy",
         "hora_retorno": r["fin_corte_hoy"] or (
@@ -601,7 +683,7 @@ async def analitica_historica(zona: str):
         "duracion_promedio": r["duracion_promedio_horas"] if r["duracion_promedio_horas"] is not None
         else "sin datos",
         "reincidencia_detectada": "Sí" if r["cortes_hoy"] > 1 else "No",
-        "mensaje": mensaje_zona(r),
+        "mensaje": mensaje,
     }
 
 
@@ -661,12 +743,13 @@ async def sector(nombre: str):
         filas = conn.execute("SELECT celda, votos FROM alias WHERE nombre = ? ORDER BY votos DESC",
                              (limpio,)).fetchall()
         cubre = set(celdas_de_alias(conn, limpio))
+        resolucion = resolver_sector(conn, nombre)
         celdas = []
         for f in filas:
             lat, lon = centro_celda(f["celda"])
             celdas.append({"id": f["celda"], "lat": lat, "lon": lon, "votos": f["votos"],
                            "cubre": f["celda"] in cubre, "nombre_mas_votado": nombre_de_celda(conn, f["celda"], False)})
-    return {"nombre": limpio, "conocido": bool(celdas), "celdas": celdas}
+    return {"nombre": limpio, "conocido": bool(celdas), "celdas": celdas, "resolucion": resolucion}
 
 
 @app.get("/api/salud")
