@@ -59,9 +59,10 @@ export function Panel(props: Props) {
             <summary>📲 Instalar Radar en tu iPhone</summary>
             <ol>
               <li>Abre esta página en <strong>Safari</strong>.</li>
-              <li>Toca el botón <strong>Compartir</strong> (el cuadrito con una flecha hacia arriba ⬆️, abajo en el centro).</li>
+              <li>Toca el botón <strong>···</strong> (a la derecha de la barra de dirección) y luego <strong>Compartir</strong>.
+                En iPhone con iOS anterior al 26, toca directo el botón <strong>Compartir</strong> ⬆️.</li>
               <li>Desliza hacia abajo y toca <strong>Agregar a inicio</strong>.</li>
-              <li>Toca <strong>Agregar</strong>: Radar queda en tu pantalla como una app.</li>
+              <li>Deja activado <strong>Abrir como app web</strong> y toca <strong>Agregar</strong>.</li>
             </ol>
           </details>
         )}
