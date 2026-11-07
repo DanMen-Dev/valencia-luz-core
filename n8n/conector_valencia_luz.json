@@ -1,0 +1,773 @@
+{
+  "name": "Flujo Conector Frontend to Backend",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reporte-comunitario-luz",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1200,
+        300
+      ],
+      "id": "e0e584d5-94e8-477a-af57-4ea70a6462af",
+      "name": "Webhook",
+      "webhookId": "8d9b585b-ee83-48cf-a86f-3eee5b2f97ea"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lee el evento de Chatwoot (llega como texto en body.data o como objeto) y decide la ruta por reglas.\n// Rutas: ignorar | bienvenida | ubicacion | texto\nconst SALUDO = /^(hola+|ola|buenas?|buen(os|as)?\\s*(d[ií]as?|tardes?|noches?)|saludos|hey|epa|men[uú]|ayuda|inicio|info|start|\\?)[\\s!.,¡¿?]*$/i;\n\nconst salida = [];\nfor (const item of $input.all()) {\n  const body = item.json.body || {};\n  let ev = body.data !== undefined ? body.data : body;\n  if (typeof ev === 'string') {\n    try { ev = JSON.parse(ev); } catch (e) { ev = {}; }\n  }\n  ev = ev || {};\n\n  const remitente = ev.conversation?.meta?.sender || ev.sender || ev.meta?.sender || {};\n  const telefono = String(remitente.phone_number || '').replace(/\\D/g, '');\n  const texto = String(ev.content || '').trim();\n  const adjunto = (ev.attachments || []).find(a => a && a.file_type === 'location');\n  const lat = adjunto ? Number(adjunto.coordinates_lat) : null;\n  const lon = adjunto ? Number(adjunto.coordinates_long) : null;\n\n  let ruta;\n  if (ev.event !== 'message_created' || ev.message_type !== 'incoming' || !telefono) ruta = 'ignorar';\n  else if (adjunto && Number.isFinite(lat) && Number.isFinite(lon)) ruta = 'ubicacion';\n  else if (!texto || SALUDO.test(texto)) ruta = 'bienvenida';\n  else ruta = 'texto';\n\n  salida.push({ json: { ruta, telefono, texto: texto.slice(0, 300), lat, lon } });\n}\nreturn salida;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        300
+      ],
+      "id": "f265b031-cf2f-4b2c-8099-5408939cc1cc",
+      "name": "Leer mensaje"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "32da4e07-0ef2-4883-99be-fff7168c1251",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "ignorar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ignorar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "67ebcc48-f1d7-4bb9-8ee7-9375361d1239",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "bienvenida",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "bienvenida"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "922c1222-1ce2-4009-8844-4fa7270dab78",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "ubicacion",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ubicacion"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "57f99c44-3722-4a31-b5d5-c7fc7c427e00",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "texto",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "texto"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -760,
+        300
+      ],
+      "id": "e289db46-aef1-4fc7-899c-d2e0dd1b4e0c",
+      "name": "Ruta"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "47841994-efaf-47b2-8803-32e5f17efee8",
+              "name": "mensaje",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -500,
+        -60
+      ],
+      "id": "687246d5-f822-4835-b58c-080d410723ca",
+      "name": "Sin respuesta"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4ece1714-c131-4385-96cd-cf17a7124810",
+              "name": "mensaje",
+              "value": "💡 *Valencia Luz* · reportes de luz en Carabobo hechos por los vecinos.\n\n• *Reportar un corte:* envía tu ubicación 📍 y luego el nombre de tu sector.\n• *Avisar que volvió la luz:* envía tu ubicación y responde *Si, tu sector*.\n• *Consultar un sector:* escribe su nombre, por ejemplo *Prebo*.\n\nMapa en vivo: https://luz.brecha-cero.com/mapa",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -500,
+        100
+      ],
+      "id": "ad0433ca-bfab-4593-bc33-1faa1a398513",
+      "name": "Bienvenida"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://luz_backend_python:8000/api/reportar/gps",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Leer mensaje').item.json.telefono, latitud: $('Leer mensaje').item.json.lat, longitud: $('Leer mensaje').item.json.lon }) }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -500,
+        260
+      ],
+      "id": "34d06902-c951-45ca-8609-579344df0b7c",
+      "name": "Guardar ubicación"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Respuesta de POST /api/reportar/gps (respuesta completa, sin cortar el flujo por errores)\nconst r = $input.first().json;\nconst codigo = r.statusCode;\nlet mensaje;\nif (codigo === 200) {\n  mensaje = '📍 *Ubicación recibida.*\\n\\n' +\n    'Ahora responde con el nombre de tu sector (ej.: *Prebo*, *Tocuyito*, *San Diego*).\\n' +\n    'Si en tu casa *ya volvió la luz*, escribe *Si* antes del sector: *Si, Prebo*.\\n\\n' +\n    '_Tienes 10 minutos para responder._';\n} else if (codigo === 429) {\n  mensaje = '⏳ Ya recibimos varios reportes desde este número en la última hora. Intenta de nuevo más tarde.';\n} else if (codigo === 422) {\n  mensaje = '📍 Esa ubicación parece estar fuera de Venezuela. Envía la ubicación actual de tu casa.';\n} else {\n  mensaje = '⚠️ No pudimos guardar tu ubicación en este momento. Intenta de nuevo en unos minutos.';\n}\nreturn [{ json: { mensaje } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        260
+      ],
+      "id": "7a508961-b6b9-46d9-83f0-53dd09349713",
+      "name": "Mensaje ubicación"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://luz_backend_python:8000/api/usuario/esperando-nombre",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "telefono",
+              "value": "={{ $('Leer mensaje').item.json.telefono }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -500,
+        520
+      ],
+      "id": "36f33f1d-5efa-4ade-9e36-f21206ee33ca",
+      "name": "¿Espera sector?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f134bfab-a498-4600-9158-07dafc93bc2a",
+              "leftValue": "={{ $json.body.estado }}",
+              "rightValue": "esperando",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -280,
+        520
+      ],
+      "id": "938ab388-8883-4614-8d70-d3cccd809952",
+      "name": "¿Esperando?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://luz_backend_python:8000/api/reportar/nombre",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Leer mensaje').item.json.telefono, nombre_zona: $('Leer mensaje').item.json.texto }) }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -40,
+        420
+      ],
+      "id": "28ebb92b-5976-4618-b7b7-f520458a2d6b",
+      "name": "Guardar sector"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Respuesta de POST /api/reportar/nombre\nconst r = $input.first().json;\nconst b = r.body || {};\nlet mensaje;\nif (r.statusCode === 200) {\n  const zona = String(b.zona || '').toUpperCase();\n  mensaje = b.tiene_luz === 1\n    ? `✅ Registramos que *volvió la luz* en *${zona}*. ¡Gracias por avisar!`\n    : `✅ Tu reporte de *corte* en *${zona}* ya está en el mapa.`;\n  mensaje += '\\nMapa en vivo: https://luz.brecha-cero.com/mapa';\n} else if (r.statusCode === 404) {\n  mensaje = '📍 Tu ubicación ya venció. Envíala de nuevo y luego responde con el nombre de tu sector.';\n} else if (r.statusCode === 422) {\n  mensaje = 'No entendí el nombre del sector. Escríbelo solo, por ejemplo: *Prebo* o *Si, Prebo*.';\n} else {\n  mensaje = '⚠️ No pudimos guardar tu reporte en este momento. Intenta de nuevo en unos minutos.';\n}\nreturn [{ json: { mensaje } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        420
+      ],
+      "id": "9fec2194-077e-4110-b2d4-7d6818783b46",
+      "name": "Mensaje sector"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Leer mensaje').item.json.texto }}",
+        "options": {
+          "systemMessage": "Lees mensajes de WhatsApp de vecinos de Carabobo, Venezuela, que preguntan por la luz. Extrae SOLO el nombre del sector, urbanización, parroquia o municipio que menciona el mensaje, tal como lo escribió (sin agregar palabras). Si no menciona ninguno, devuelve zona vacía. No respondas la pregunta ni inventes lugares.",
+          "maxIterations": 1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -40,
+        660
+      ],
+      "id": "33582192-4c6c-43c0-b3c8-417f8762772a",
+      "name": "Extraer zona (único modelo)"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0,
+          "maxTokens": 60,
+          "textFormat": {
+            "textOptions": {
+              "type": "json_schema",
+              "name": "zona",
+              "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"zona\": {\n      \"type\": \"string\",\n      \"description\": \"Nombre del sector mencionado, o cadena vacía si no hay ninguno.\"\n    }\n  },\n  \"required\": [\n    \"zona\"\n  ],\n  \"additionalProperties\": false\n}",
+              "description": "Sector mencionado en el mensaje"
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -40,
+        860
+      ],
+      "id": "3b3e1e96-5d30-44a5-b794-bfd35b53243d",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "Y3NDQqZ5ytOU6iJp",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Salida del modelo: {\"zona\": \"...\"} como texto u objeto. Si no se puede leer, zona vacía.\nlet out = $input.first().json.output;\nif (typeof out === 'string') {\n  const m = out.match(/\\{[\\s\\S]*\\}/);\n  try { out = JSON.parse(m ? m[0] : out); } catch (e) { out = {}; }\n}\nconst zona = String((out && out.zona) || '').trim().slice(0, 60);\nreturn [{ json: { zona } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        660
+      ],
+      "id": "918e0576-83a6-4ead-93d3-60249a541ff0",
+      "name": "Leer zona"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "818c11ae-e82d-471d-a4cd-c3889707759e",
+              "leftValue": "={{ $json.zona }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        520,
+        660
+      ],
+      "id": "fbbca80c-c0a8-4200-b94b-d8d83e7c61fb",
+      "name": "¿Hay zona?"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://luz_backend_python:8000/api/analitica/historico",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "zona",
+              "value": "={{ $json.zona }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        740,
+        580
+      ],
+      "id": "083539c1-2970-4e07-bdf8-5e7d5df8a820",
+      "name": "Resumen del sector"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5828cfd7-1820-4cc4-b82a-5149615b9adf",
+              "name": "mensaje",
+              "value": "={{ $json.statusCode === 200 ? $json.body.mensaje : \"⚠️ No pudimos consultar ese sector en este momento. Intenta de nuevo en unos minutos.\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        960,
+        580
+      ],
+      "id": "3f49d100-3883-4e66-ac5f-ed9e9a84d64b",
+      "name": "Mensaje del sector"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cc72fd2a-23cb-41cd-804c-e13264a7ec28",
+              "name": "mensaje",
+              "value": "No identifiqué el sector en tu mensaje. Escribe solo su nombre (ej.: *Prebo*, *Tocuyito*) o envía tu ubicación 📍 para reportar un corte.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        740,
+        780
+      ],
+      "id": "2bc19e78-0436-48c5-ae5b-e3b3459db876",
+      "name": "Pedir sector"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"mensaje_confirmacion\": $json.mensaje } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1240,
+        300
+      ],
+      "id": "9a12a5f2-7f19-4ea5-86d1-ef8abd6d5070",
+      "name": "Responder"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Leer mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer mensaje": {
+      "main": [
+        [
+          {
+            "node": "Ruta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ruta": {
+      "main": [
+        [
+          {
+            "node": "Sin respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bienvenida",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guardar ubicación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Espera sector?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar ubicación": {
+      "main": [
+        [
+          {
+            "node": "Mensaje ubicación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Espera sector?": {
+      "main": [
+        [
+          {
+            "node": "¿Esperando?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Esperando?": {
+      "main": [
+        [
+          {
+            "node": "Guardar sector",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extraer zona (único modelo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar sector": {
+      "main": [
+        [
+          {
+            "node": "Mensaje sector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extraer zona (único modelo)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer zona (único modelo)": {
+      "main": [
+        [
+          {
+            "node": "Leer zona",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer zona": {
+      "main": [
+        [
+          {
+            "node": "¿Hay zona?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay zona?": {
+      "main": [
+        [
+          {
+            "node": "Resumen del sector",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedir sector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resumen del sector": {
+      "main": [
+        [
+          {
+            "node": "Mensaje del sector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bienvenida": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje ubicación": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje sector": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje del sector": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir sector": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "6ikeUXIC8Tu83Dn5",
+  "tags": []
+}

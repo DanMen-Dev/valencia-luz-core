@@ -1,0 +1,180 @@
+{
+  "name": "Bridge: Valencia Luz - Espejo Temporal",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "puente-espejo-luz",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -600,
+        0
+      ],
+      "id": "5e796d37-1036-4062-88d9-29c6b474bccf",
+      "name": "Webhook",
+      "webhookId": "2a037066-f860-4d5e-9662-31fca9a12cbb"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e7249af6-7b0e-4c25-b6b3-6a46274e0a92",
+              "leftValue": "={{ $json.body.message_type }}",
+              "rightValue": "incoming",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -380,
+        0
+      ],
+      "id": "9a3bcac6-d9c0-4385-abc8-b596db2a170f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/reporte-comunitario-luz",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: JSON.stringify($('Webhook').item.json.body) }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -160,
+        0
+      ],
+      "id": "449d9b1a-9369-4469-b1fb-532844f87170",
+      "name": "Conector"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "69777514-04cb-4dee-91c2-f5d96aa307b2",
+              "leftValue": "={{ $json.mensaje_confirmacion }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        60,
+        0
+      ],
+      "id": "7d6d1fb4-23c6-4460-8686-a3c8ad93605b",
+      "name": "¿Hay respuesta?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://chatwoot-server:3000/api/v1/accounts/1/conversations/{{ $('Webhook').item.json.body.conversation.id }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.mensaje_confirmacion, message_type: 'outgoing' }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        280,
+        -20
+      ],
+      "id": "c8225e3e-9684-43cc-a0e2-7d28fe83c54c",
+      "name": "Responder en Chatwoot"
+    }
+  ],
+  "pinData": {},
+  "active": true,
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Conector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conector": {
+      "main": [
+        [
+          {
+            "node": "¿Hay respuesta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay respuesta?": {
+      "main": [
+        [
+          {
+            "node": "Responder en Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "g8kU190PGJ8N6OQF",
+  "tags": []
+}
