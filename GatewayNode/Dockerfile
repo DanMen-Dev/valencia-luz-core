@@ -4,7 +4,7 @@
 FROM node:24-slim AS frontend
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 

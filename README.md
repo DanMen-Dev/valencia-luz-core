@@ -94,7 +94,7 @@ docker compose up -d --build
 Frontend en modo desarrollo (con el gateway corriendo en Docker):
 
 ```bash
-cd frontend && npm install && npm run dev   # http://localhost:5173/recursos/
+cd frontend && npm ci && npm run dev   # http://localhost:5173/recursos/
 ```
 
 Pruebas del backend:
