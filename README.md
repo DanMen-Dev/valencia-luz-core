@@ -64,7 +64,7 @@ Es estadística simple y transparente, no un modelo predictivo. Un modelo de ver
 
 Durante un apagón muchas veces cae también la señal de datos, así que Radar es una **PWA**: en Android se instala desde el botón "Instalar Radar" (en iPhone, Compartir → Agregar a inicio) y abre sin conexión. Un service worker guarda la app, la última lista de reportes (el panel avisa "Sin conexión: mostrando los reportes guardados a las …") y las calles ya vistas.
 
-El fondo del mapa es **OpenFreeMap** (mapas vectoriales con datos de OpenStreetMap, gratis, sin clave ni límite de vistas), dibujado con MapLibre debajo de las capas de Leaflet. Si el teléfono no tiene WebGL o OpenFreeMap falla, el mapa cambia solo a las imágenes de OpenStreetMap. Se descartó MapTiler porque su plan gratis se pausa al pasar 5.000 sesiones al mes, justo lo que pasaría en un apagón grande.
+El fondo del mapa es **OpenFreeMap** (mapas vectoriales con datos de OpenStreetMap, gratis, sin clave ni límite de vistas), dibujado con MapLibre debajo de las capas de Leaflet. MapLibre pesa unos 300 KB comprimido, así que se carga aparte: la app y los círculos aparecen primero sobre las imágenes de OpenStreetMap, y el fondo vectorial las reemplaza cuando termina de dibujarse. Si el teléfono no tiene WebGL o OpenFreeMap falla, se quedan las imágenes de OpenStreetMap. Se descartó MapTiler porque su plan gratis se pausa al pasar 5.000 sesiones al mes, justo lo que pasaría en un apagón grande.
 
 ## Decisiones y lecciones
 

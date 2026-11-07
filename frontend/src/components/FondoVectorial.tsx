@@ -8,7 +8,7 @@ import { ATRIBUCION_OPENFREEMAP, ESTILO_OPENFREEMAP } from '../lib/fondoMapa';
 // Fondo vectorial: un mapa de MapLibre debajo de las capas de Leaflet, que lo sigue en cada movimiento.
 // Leaflet sigue manejando los gestos, los circulos y los popups; MapLibre solo dibuja las calles.
 // MapLibre usa cuadros de 512 px y Leaflet de 256: el mismo nivel de detalle es zoom - 1.
-export function FondoVectorial({ onFalla }: { onFalla: () => void }) {
+export function FondoVectorial({ onFalla, onListo }: { onFalla: () => void; onListo?: () => void }) {
   const map = useMap();
 
   useEffect(() => {
@@ -38,6 +38,8 @@ export function FondoVectorial({ onFalla }: { onFalla: () => void }) {
     map.on('resize', redimensionar);
     map.attributionControl?.addAttribution(ATRIBUCION_OPENFREEMAP);
 
+    gl.once('load', () => onListo?.());
+
     // Un cuadro suelto que falla no importa; si falla el estilo o fallan muchos seguidos, al respaldo
     let fallas = 0;
     gl.on('error', e => {
@@ -53,7 +55,7 @@ export function FondoVectorial({ onFalla }: { onFalla: () => void }) {
       gl.remove();
       lienzo.remove();
     };
-  }, [map, onFalla]);
+  }, [map, onFalla, onListo]);
 
   return null;
 }
